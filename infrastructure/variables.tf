@@ -14,15 +14,9 @@ variable "root_domain_name" {
   description = "Root domain name (e.g., example.com)"
 }
 
-variable "sam_rest_api_id" {
+variable "sam_http_api_id" {
   type        = string
-  description = "SAM API Gateway Rest API ID (from SAM Outputs.RestApiId)"
-}
-
-variable "sam_rest_api_stage" {
-  type        = string
-  description = "SAM API Gateway stage name (from SAM Outputs.RestApiStageName)"
-  default     = "Prod"
+  description = "HTTP API (ApiGatewayV2) ID from SAM Outputs.HttpApiId"
 }
 
 

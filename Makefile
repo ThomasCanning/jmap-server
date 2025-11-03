@@ -19,23 +19,32 @@ TF_DIR      ?= infrastructure
 # Derive SAM stack name from samconfig.toml if not provided via env
 STACK_NAME  ?= $(shell awk -F'=' '/^stack_name/ {gsub(/[ "\r\t]/, "", $$2); print $$2}' samconfig.toml)
 
-.PHONY: deploy tf-apply sam-deploy set-admin-password remove-base-path-mapping
-.PHONY: local local-backend local-frontend
+.PHONY: deploy tf-apply sam-deploy set-admin-password remove-base-path-mapping build-web
+.PHONY: local local-backend local-frontend gen-env-local
 
-deploy: ensure-config remove-base-path-mapping sam-deploy set-admin-password tf-bootstrap tf-apply
+gen-env-local:
+	@STACK_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].StackId' --output text 2>/dev/null || true); \
+	USER_POOL_CLIENT_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || true); \
+	REG=$(REGION); API_BASE="http://localhost:3001"; \
+	printf '{\n  "wellKnownJmapFunction": {\n    "API_URL": "%s/jmap",\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "jmapFunction": {\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "authLogoutFunction": {}\n}\n' "$$API_BASE" "$$USER_POOL_CLIENT_ID" "$$REG" "$$USER_POOL_CLIENT_ID" "$$REG" > env.json; \
+	echo "✓ Wrote env.json (region=$(REGION), client_id=$${USER_POOL_CLIENT_ID:-<unset>})"
+
+deploy: ensure-config remove-base-path-mapping sam-deploy set-admin-password build-web tf-bootstrap tf-apply
+
+build-web:
+	@echo "Building web application..."
+	@cd web && npm ci && npm run build
+	@echo "✓ Web build complete"
 
 tf-apply:
 	@# Read SAM outputs to feed Terraform variables
-	REST_API_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks \
-		--stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`RestApiId`].OutputValue' --output text); \
-	REST_API_STAGE=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks \
-		--stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`RestApiStageName`].OutputValue' --output text); \
+	HTTP_API_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks \
+		--stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`HttpApiId`].OutputValue' --output text); \
 	AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) init -upgrade; \
 	AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
 		-var="region=$(REGION)" \
 		-var="root_domain_name=$(ROOT_DOMAIN)" \
-		-var="sam_rest_api_id=$$REST_API_ID" \
-		-var="sam_rest_api_stage=$$REST_API_STAGE" \
+		-var="sam_http_api_id=$$HTTP_API_ID" \
 		-auto-approve
 
 sam-deploy:
@@ -51,26 +60,18 @@ sam-deploy:
 		AdminUsername=$(or $(ADMIN_USERNAME),admin)
 
 remove-base-path-mapping:
-	@echo "Checking if base path mapping needs to be updated..."
-	@AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) init -upgrade >/dev/null 2>&1; \
-	OLD_API_ID=$$(AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) state show aws_api_gateway_base_path_mapping.root 2>/dev/null | grep -E '^\s+api_id\s*=' | awk '{print $$3}' | tr -d '"' || echo ""); \
-	if [ -n "$$OLD_API_ID" ]; then \
-	  NEW_API_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks \
-		--stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`RestApiId`].OutputValue' --output text 2>/dev/null || echo ""); \
-	  if [ -n "$$NEW_API_ID" ] && [ "$$OLD_API_ID" != "$$NEW_API_ID" ]; then \
-	    echo "API Gateway ID changed ($$OLD_API_ID -> $$NEW_API_ID), removing old base path mapping..."; \
-	    AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) destroy -target=aws_api_gateway_base_path_mapping.root \
-		-var="region=$(REGION)" \
-		-var="root_domain_name=$(ROOT_DOMAIN)" \
-		-var="sam_rest_api_id=$$OLD_API_ID" \
-		-var="sam_rest_api_stage=Prod" \
-		-auto-approve >/dev/null 2>&1 && echo "✓ Base path mapping removed" || echo "⚠ Could not remove mapping"; \
+	@echo "Removing legacy REST API base path mapping if present..."
+	@AWS_REGION=$(REGION) aws apigateway get-base-path-mappings --domain-name $(shell echo jmap.$(ROOT_DOMAIN)) --query 'items[].basePath' --output text 2>/dev/null | \
+	awk '{for(i=1;i<=NF;i++) print $$i}' | while read -r path; do \
+	  if [ "$$path" = "(none)" ] || [ -z "$$path" ]; then \
+	    echo "Deleting root mapping on domain jmap.$(ROOT_DOMAIN)..."; \
+	    AWS_REGION=$(REGION) aws apigateway delete-base-path-mapping --domain-name jmap.$(ROOT_DOMAIN) --base-path '(none)' || true; \
 	  else \
-	    echo "✓ Base path mapping is up-to-date (API ID unchanged)"; \
+	    echo "Deleting mapping $$path on domain jmap.$(ROOT_DOMAIN)..."; \
+	    AWS_REGION=$(REGION) aws apigateway delete-base-path-mapping --domain-name jmap.$(ROOT_DOMAIN) --base-path $$path || true; \
 	  fi; \
-	else \
-	  echo "No existing base path mapping found in Terraform state"; \
-	fi
+	done; \
+	echo "✓ Legacy mappings cleanup attempted"
 
 set-admin-password:
 	@if [ -z "$$ADMIN_PASSWORD" ]; then \
@@ -98,16 +99,25 @@ set-admin-password:
 	  echo "  User not found yet, waiting (attempt $$RETRY/$$MAX_RETRIES)..."; \
 	  sleep 5; \
 	done; \
-	if AWS_REGION=$(REGION) aws cognito-idp admin-set-user-password \
+	USER_STATUS=$$(AWS_REGION=$(REGION) aws cognito-idp admin-get-user \
+		--user-pool-id $$USER_POOL_ID \
+		--username $${ADMIN_USER}@$(ROOT_DOMAIN) \
+		--region $(REGION) --query 'UserStatus' --output text 2>/dev/null); \
+	if [ "$$USER_STATUS" = "CONFIRMED" ]; then \
+	  echo "✓ Admin user already has a permanent password. Skipping reset."; \
+	else \
+	  if AWS_REGION=$(REGION) aws cognito-idp admin-set-user-password \
 		--user-pool-id $$USER_POOL_ID \
 		--username $${ADMIN_USER}@$(ROOT_DOMAIN) \
 		--password "$$ADMIN_PASSWORD" \
 		--region $(REGION) \
+		--permanent \
 		--no-cli-pager 2>/dev/null; then \
-	  echo "✓ Admin password set successfully (temporary - user must change on first login)"; \
-	else \
-	  echo "⚠ Warning: Failed to set password. User may already have a permanent password."; \
-	  exit 0; \
+	    echo "✓ Admin password set (permanent)"; \
+	  else \
+	    echo "⚠ Warning: Failed to set password."; \
+	    exit 0; \
+	  fi; \
 	fi
 
 # Bootstrap: ensure hosted zone exists and registrar NS matches Route 53 NS
@@ -115,7 +125,7 @@ set-admin-password:
 tf-bootstrap:
 	AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) init -upgrade
 	@# Create/refresh the hosted zone first to obtain nameservers
-	AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply -auto-approve -target=aws_route53_zone.root -var="region=$(REGION)" -var="root_domain_name=$(ROOT_DOMAIN)" -var="sam_rest_api_id=dummy" -var="sam_rest_api_stage=Prod"
+	AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply -auto-approve -target=aws_route53_zone.root -var="region=$(REGION)" -var="root_domain_name=$(ROOT_DOMAIN)" -var="sam_http_api_id=dummy"
 	@# Fetch Route 53 NS from Terraform state
 	R53_NS=$$(AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) output -json root_nameservers | jq -r '.[]' | sed 's/\.$//' | sort); \
 	REG_NS=$$(dig NS $(ROOT_DOMAIN) +short | sed 's/\.$//' | sort); \
@@ -139,14 +149,15 @@ local:
 	@command -v sam >/dev/null || (echo "ERROR: AWS SAM CLI not found"; exit 1)
 	@docker info >/dev/null 2>&1 || (echo "ERROR: Docker is not running"; exit 1)
 	@echo "Building and starting services..."
+	@$(MAKE) gen-env-local >/dev/null || true
 	@env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
 	  AWS_REGION=$(or $(REGION),eu-west-2) AWS_DEFAULT_REGION=$(or $(REGION),eu-west-2) \
 	  sam build --region $(or $(REGION),eu-west-2)
 	@env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
-	  AWS_REGION=$(or $(REGION),eu-west-2) AWS_DEFAULT_REGION=$(or $(REGION),eu-west-2) \
+	  AWS_REGION=$(or $(REGION),eu-west-2) AWS_DEFAULT_REGION=$(or $(REGION),eu-west-2) AWS_EC2_METADATA_DISABLED=true \
 	  sam local start-api --region $(or $(REGION),eu-west-2) --host 127.0.0.1 --port 3001 \
 	  --env-vars env.json \
-	  >/dev/null 2>&1 & echo $$! > /tmp/sam-local.pid || exit 1
+	  & echo $$! > /tmp/sam-local.pid || exit 1
 	@BACK_PID=$$(cat /tmp/sam-local.pid 2>/dev/null); \
 	cd web && npm install && npm run dev -- --port 5173 >/dev/null 2>&1 & \
 	WEB_PID=$$!; \
@@ -184,6 +195,7 @@ local:
 local-backend:
 	@command -v sam >/dev/null || (echo "ERROR: AWS SAM CLI not found"; exit 1)
 	@docker info >/dev/null 2>&1 || (echo "ERROR: Docker is not running"; exit 1)
+	@$(MAKE) gen-env-local >/dev/null || true
 	@mkdir -p .logs
 	@env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
 	  AWS_REGION=$(or $(REGION),eu-west-2) AWS_DEFAULT_REGION=$(or $(REGION),eu-west-2) \

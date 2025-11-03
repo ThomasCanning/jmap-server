@@ -33,28 +33,23 @@ Globals:
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
 Resources:
-  # Explicit API Gateway with Cognito authorization
-  JmapApi:
-    Type: AWS::Serverless::Api
+  # HTTP API (no API Gateway authorizer; handlers enforce Basic/Bearer)
+  JmapHttpApi:
+    Type: AWS::Serverless::HttpApi
     Properties:
-      StageName: Prod
-      Auth:
-        DefaultAuthorizer: CognitoAuthorizer
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: !GetAtt UserPool.Arn
-        AddDefaultAuthorizerToCorsPreflight: false
-      Cors:
-        AllowMethods: "'*'"
-        AllowHeaders: "'*'"
-        AllowOrigin: "'*'"
-
-  # Cognito User Pool Domain (required for hosted UI)
-  UserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    Properties:
-      Domain: !Sub '${AWS::StackName}-auth'
-      UserPoolId: !Ref UserPool
+      CorsConfiguration:
+        AllowMethods:
+          - '*'
+        AllowHeaders:
+          - '*'
+          - Authorization
+          - Content-Type
+        AllowOrigins:
+          - !Sub 'https://${RootDomainName}'
+          - !Sub 'https://jmap.${RootDomainName}'
+          - 'http://localhost:5173'
+          - 'http://localhost:3000'
+        AllowCredentials: true
 
   # Cognito User Pool Client (required for API Gateway integration)
   UserPoolClient:
@@ -67,23 +62,6 @@ Resources:
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
         - ALLOW_USER_SRP_AUTH
-      AllowedOAuthFlowsUserPoolClient: true
-      AllowedOAuthFlows:
-        - code
-      AllowedOAuthScopes:
-        - email
-        - openid
-        - profile
-      CallbackURLs:
-        - !Sub 'https://${RootDomainName}'
-        - !Sub 'https://${RootDomainName}/'
-        - !Sub 'https://jmap.${RootDomainName}'
-        - !Sub 'https://jmap.${RootDomainName}/'
-      LogoutURLs:
-        - !Sub 'https://${RootDomainName}'
-        - !Sub 'https://jmap.${RootDomainName}'
-      SupportedIdentityProviders:
-        - COGNITO
 
   # Admin user for the User Pool
   AdminUser:
@@ -108,49 +86,68 @@ Resources:
       Handler: src/handlers/well-known-jmap.wellKnownJmapHandler
       Environment:
         Variables:
-          API_URL: !Sub 'https://jmap.${RootDomainName}/'
+          API_URL: !Sub 'https://jmap.${RootDomainName}/jmap'
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
-          Type: Api
+          Type: HttpApi
           Properties:
-            RestApiId: !Ref JmapApi
+            ApiId: !Ref JmapHttpApi
             Path: /.well-known/jmap
             Method: GET
-            Auth:
-              Authorizer: NONE
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External:
-          - '@aws-sdk/*'
         EntryPoints:
           - src/handlers/well-known-jmap.ts
 
-  # Lambda function: Auth test (requires Cognito auth)
-  authTestFunction:
+  # Lambda function: JMAP RPC endpoint (POST)
+  jmapFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/auth-test.authTestHandler
+      Handler: src/handlers/jmap.jmapHandler
+      Environment:
+        Variables:
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
-          Type: Api
+          Type: HttpApi
           Properties:
-            RestApiId: !Ref JmapApi
-            Path: /auth-test
-            Method: GET
+            ApiId: !Ref JmapHttpApi
+            Path: /jmap
+            Method: POST
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External:
-          - '@aws-sdk/*'
         EntryPoints:
-          - src/handlers/auth-test.ts
+          - src/handlers/jmap.ts
+
+  # Lambda function: Logout (clear cookie)
+  authLogoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/auth-logout.handler
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: /auth/logout
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handlers/auth-logout.ts
 
   
 
@@ -177,24 +174,15 @@ Resources:
 
 
 Outputs:
-  WebEndpoint:
-    Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${JmapApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
-  RestApiId:
-    Description: "API Gateway Rest API ID"
-    Value: !Ref JmapApi
-  RestApiStageName:
-    Description: "API Gateway stage name"
-    Value: Prod
+  HttpApiUrl:
+    Description: "HTTP API base URL"
+    Value: !Sub "https://${JmapHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"
+  HttpApiId:
+    Description: "HTTP API ID"
+    Value: !Ref JmapHttpApi
   UserPoolId:
     Description: "Cognito User Pool ID"
     Value: !Ref UserPool
   UserPoolClientId:
     Description: "Cognito User Pool Client ID"
     Value: !Ref UserPoolClient
-  CognitoHostedUIUrl:
-    Description: "Cognito Hosted UI URL for login"
-    Value: !Sub "https://${AWS::StackName}-auth.auth.${AWS::Region}.amazoncognito.com/login?client_id=${UserPoolClient}&response_type=code&redirect_uri=https://${RootDomainName}"
-  CognitoHostedUIDomain:
-    Description: "Cognito Hosted UI Domain"
-    Value: !Sub "${AWS::StackName}-auth.auth.${AWS::Region}.amazoncognito.com"
