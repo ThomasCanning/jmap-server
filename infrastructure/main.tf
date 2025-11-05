@@ -32,6 +32,7 @@ resource "aws_acm_certificate" "api" {
 }
 
 resource "aws_acm_certificate_validation" "api" {
+  count           = var.wait_for_certificate_validation ? 1 : 0
   certificate_arn = aws_acm_certificate.api.arn
 }
 
@@ -43,6 +44,7 @@ resource "aws_acm_certificate" "root_autodiscovery" {
 }
 
 resource "aws_acm_certificate_validation" "root_autodiscovery" {
+  count           = var.wait_for_certificate_validation ? 1 : 0
   provider        = aws.us_east_1
   certificate_arn = aws_acm_certificate.root_autodiscovery.arn
 }
@@ -52,9 +54,10 @@ resource "aws_acm_certificate_validation" "root_autodiscovery" {
 ########################
 
 resource "aws_apigatewayv2_domain_name" "jmap" {
+  count       = var.wait_for_certificate_validation ? 1 : 0
   domain_name = local.jmap_fqdn
   domain_name_configuration {
-    certificate_arn = aws_acm_certificate_validation.api.certificate_arn
+    certificate_arn = aws_acm_certificate.api.arn
     endpoint_type   = "REGIONAL"
     security_policy = "TLS_1_2"
   }
@@ -62,8 +65,9 @@ resource "aws_apigatewayv2_domain_name" "jmap" {
 }
 
 resource "aws_apigatewayv2_api_mapping" "jmap" {
+  count       = var.wait_for_certificate_validation ? 1 : 0
   api_id      = var.sam_http_api_id
-  domain_name = aws_apigatewayv2_domain_name.jmap.domain_name
+  domain_name = aws_apigatewayv2_domain_name.jmap[0].domain_name
   stage       = "$default"
 }
 
@@ -101,6 +105,7 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
 
 # CloudFront distribution for autodiscovery only
 resource "aws_cloudfront_distribution" "autodiscovery" {
+  count           = var.wait_for_certificate_validation ? 1 : 0
   enabled         = true
   aliases         = [var.root_domain_name]
   comment         = "JMAP autodiscovery redirect only (RFC 8620)"
@@ -149,7 +154,7 @@ resource "aws_cloudfront_distribution" "autodiscovery" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.root_autodiscovery.certificate_arn
+    acm_certificate_arn      = aws_acm_certificate.root_autodiscovery.arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }

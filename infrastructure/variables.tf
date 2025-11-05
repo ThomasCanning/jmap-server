@@ -12,3 +12,9 @@ variable "sam_http_api_id" {
   type        = string
   description = "HTTP API ID from SAM outputs"
 }
+
+variable "wait_for_certificate_validation" {
+  type        = bool
+  description = "Whether to wait for certificate validation (set false on first deploy)"
+  default     = false
+}
