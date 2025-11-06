@@ -18,3 +18,9 @@ variable "wait_for_certificate_validation" {
   description = "Whether to wait for certificate validation (set false on first deploy)"
   default     = false
 }
+
+variable "web_client_s3_endpoint" {
+  type        = string
+  description = "S3 website endpoint for web client (e.g., bucket.s3-website.region.amazonaws.com). If set, CloudFront will serve the web client from S3."
+  default     = ""
+}

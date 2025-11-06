@@ -265,8 +265,8 @@ Don't forget to remove DNS records from your DNS provider.
 
 - **CloudFront Distribution**:
   - Domain: `yourdomain.com`
-  - Handles ONLY `/.well-known/jmap` (autodiscovery redirect)
-  - Returns 404 for all other paths
+  - When S3 web client is enabled: Serves web client from S3, redirects `/.well-known/jmap` to `jmap.yourdomain.com/.well-known/jmap`
+  - When S3 web client is disabled: Redirects `/.well-known/jmap` to `jmap.yourdomain.com/.well-known/jmap`, returns 404 for all other paths
 
 - **ACM Certificates**:
   - API Gateway (regional, in deployment region)
@@ -300,7 +300,3 @@ After Free Tier:
 - [Authentication Documentation](docs/AUTHENTICATION.md) - Auth flow details
 - [JMAP Specification (RFC 8620)](https://jmap.io/) - Protocol reference
 - [AWS SAM Developer Guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html)
-
-## License
-
-[Your License]

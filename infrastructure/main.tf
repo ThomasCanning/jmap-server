@@ -80,7 +80,7 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
   name    = "jmap-autodiscovery-redirect"
   runtime = "cloudfront-js-1.0"
   publish = true
-  comment = "RFC 8620 JMAP autodiscovery redirect"
+  comment = "RFC 8620 JMAP autodiscovery redirect - redirects /.well-known/jmap, returns 404 for other paths when S3 disabled"
   code    = <<-EOT
     function handler(event) {
       var request = event.request;
@@ -94,7 +94,8 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
           }
         };
       }
-      // Everything else returns 404
+      // When used on default cache behavior (S3 disabled), return 404 for other paths
+      // When used on /.well-known/jmap cache behavior (S3 enabled), this won't be reached
       return {
         statusCode: 404,
         body: 'Not Found'
@@ -103,38 +104,94 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
   EOT
 }
 
-# CloudFront distribution for autodiscovery only
+# CloudFront distribution for autodiscovery (and optionally web client)
 resource "aws_cloudfront_distribution" "autodiscovery" {
   count           = var.wait_for_certificate_validation ? 1 : 0
   enabled         = true
   aliases         = [var.root_domain_name]
-  comment         = "JMAP autodiscovery redirect only (RFC 8620)"
+  comment         = var.web_client_s3_endpoint != "" ? "JMAP autodiscovery + web client" : "JMAP autodiscovery redirect only (RFC 8620)"
   price_class     = "PriceClass_100"
   is_ipv6_enabled = true
 
-  # Dummy origin (never used - CloudFront function handles everything)
-  origin {
-    domain_name = "unused.example.com"
-    origin_id   = "unused"
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
+  # S3 origin for web client (only if web_client_s3_endpoint is set)
+  dynamic "origin" {
+    for_each = var.web_client_s3_endpoint != "" ? [1] : []
+    content {
+      domain_name = var.web_client_s3_endpoint
+      origin_id   = "s3-web-client"
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
     }
   }
 
+  # Dummy origin (only used when S3 is disabled - CloudFront function handles everything)
+  dynamic "origin" {
+    for_each = var.web_client_s3_endpoint == "" ? [1] : []
+    content {
+      domain_name = "unused.example.com"
+      origin_id   = "unused"
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "https-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
+  # Cache behavior for /.well-known/jmap (MUST come before default_cache_behavior)
+  # Only used when S3 is enabled - redirects to jmap.domain.com
+  dynamic "ordered_cache_behavior" {
+    for_each = var.web_client_s3_endpoint != "" ? [1] : []
+    content {
+      path_pattern           = "/.well-known/jmap"
+      target_origin_id       = "s3-web-client"  # Dummy - function handles response
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+
+      # Use CloudFront function to redirect to jmap.domain.com
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.autodiscovery_redirect.arn
+      }
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+
+      min_ttl     = 0
+      default_ttl = 3600
+      max_ttl     = 86400
+      compress    = false
+    }
+  }
+
+  # Default cache behavior
+  # Routes to S3 when enabled, otherwise uses CloudFront function
   default_cache_behavior {
-    target_origin_id       = "unused"
+    target_origin_id       = var.web_client_s3_endpoint != "" ? "s3-web-client" : "unused"
     viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]
 
-    function_association {
-      event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.autodiscovery_redirect.arn
+    # CloudFront function only used when S3 is disabled
+    dynamic "function_association" {
+      for_each = var.web_client_s3_endpoint == "" ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.autodiscovery_redirect.arn
+      }
     }
 
+    # Forwarded values (required for CloudFront cache behaviors)
     forwarded_values {
       query_string = false
       cookies {
@@ -145,6 +202,18 @@ resource "aws_cloudfront_distribution" "autodiscovery" {
     min_ttl     = 0
     default_ttl = 3600
     max_ttl     = 86400
+    compress    = var.web_client_s3_endpoint != "" ? true : false
+  }
+
+  # Custom error responses for SPA routing (only when S3 is enabled)
+  dynamic "custom_error_response" {
+    for_each = var.web_client_s3_endpoint != "" ? [403, 404] : []
+    content {
+      error_caching_min_ttl = 300
+      error_code            = custom_error_response.value
+      response_code         = 200
+      response_page_path    = "/index.html"
+    }
   }
 
   restrictions {

@@ -18,8 +18,8 @@ TF_DIR      ?= infrastructure
 STACK_NAME  ?= $(shell awk -F'=' '/^stack_name/ {gsub(/[ "\r\t]/, "", $$2); print $$2}' samconfig.toml)
 
 .PHONY: deploy tf-apply sam-deploy set-admin-password validate-password validate-dns
-.PHONY: deployment-stage1-complete deployment-complete
-.PHONY: local gen-env-local ensure-config
+.PHONY: deployment-stage1-complete deployment-complete generate-outputs
+.PHONY: local gen-env-local ensure-config update-s3-endpoint
 
 gen-env-local:
 	@STACK_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].StackId' --output text 2>/dev/null || true); \
@@ -57,36 +57,56 @@ tf-apply:
 		fi; \
 	fi; \
 	if [ "$$CERTS_VALIDATED" = "true" ]; then \
-		AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
-			-var="region=$(REGION)" \
-			-var="root_domain_name=$(ROOT_DOMAIN)" \
-			-var="sam_http_api_id=$$HTTP_API_ID" \
-			-var="wait_for_certificate_validation=true" \
-			-auto-approve; \
+		if [ "$(SERVE_WEB_CLIENT)" = "yes" ] && [ -n "$(WEB_CLIENT_S3_ENDPOINT)" ]; then \
+			AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
+				-var="region=$(REGION)" \
+				-var="root_domain_name=$(ROOT_DOMAIN)" \
+				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-var="web_client_s3_endpoint=$(WEB_CLIENT_S3_ENDPOINT)" \
+				-var="wait_for_certificate_validation=true" \
+				-auto-approve; \
+		else \
+			AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
+				-var="region=$(REGION)" \
+				-var="root_domain_name=$(ROOT_DOMAIN)" \
+				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-var="wait_for_certificate_validation=true" \
+				-auto-approve; \
+		fi; \
 		$(MAKE) deployment-complete; \
 	else \
-		AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
-			-var="region=$(REGION)" \
-			-var="root_domain_name=$(ROOT_DOMAIN)" \
-			-var="sam_http_api_id=$$HTTP_API_ID" \
-			-auto-approve; \
+		if [ "$(SERVE_WEB_CLIENT)" = "yes" ] && [ -n "$(WEB_CLIENT_S3_ENDPOINT)" ]; then \
+			AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
+				-var="region=$(REGION)" \
+				-var="root_domain_name=$(ROOT_DOMAIN)" \
+				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-var="web_client_s3_endpoint=$(WEB_CLIENT_S3_ENDPOINT)" \
+				-auto-approve; \
+		else \
+			AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
+				-var="region=$(REGION)" \
+				-var="root_domain_name=$(ROOT_DOMAIN)" \
+				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-auto-approve; \
+		fi; \
 		$(MAKE) deployment-stage1-complete; \
 	fi
 
 .PHONY: deployment-stage1-complete
 deployment-stage1-complete:
 	@# Generate DNS records file
-	@echo "Type	Name	Value	TTL" > dns-records.txt
-	@API_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$(ROOT_DOMAIN)\.$$//'); \
+	@echo "Type	Name	Value	TTL" > $(TF_DIR)/dns-records.txt; \
+	API_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$(ROOT_DOMAIN)\.$$//'); \
 	API_VALUE=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
 	ROOT_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's/\.$(ROOT_DOMAIN)\.$$//'); \
 	ROOT_VALUE=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
-	echo "CNAME	$$API_VALIDATION	$$API_VALUE	300" >> dns-records.txt; \
+	echo "CNAME	$$API_VALIDATION	$$API_VALUE	300" >> $(TF_DIR)/dns-records.txt; \
 	if [ "$$ROOT_VALIDATION" != "$$API_VALIDATION" ]; then \
-		echo "CNAME	$$ROOT_VALIDATION	$$ROOT_VALUE	300" >> dns-records.txt; \
+		echo "CNAME	$$ROOT_VALIDATION	$$ROOT_VALUE	300" >> $(TF_DIR)/dns-records.txt; \
 	fi
+	@$(MAKE) generate-outputs
 	@echo ""
-	@echo "DNS setup required. Set the values in dns-records.txt at your DNS provider."
+	@echo "DNS setup required. Set the values in $(TF_DIR)/dns-records.txt at your DNS provider."
 	@echo "Wait for propagation (or check with: make validate-dns), then run: make deploy"
 	@echo ""
 
@@ -95,12 +115,13 @@ deployment-complete:
 	@# Generate DNS records file
 	@API_TARGET=$$(cd $(TF_DIR) && terraform output -raw api_gateway_target 2>/dev/null); \
 	CF_TARGET=$$(cd $(TF_DIR) && terraform output -raw cloudfront_autodiscovery_target 2>/dev/null); \
-	echo "Type	Name	Value	TTL" > dns-records.txt; \
-	echo "CNAME	jmap	$$API_TARGET	300" >> dns-records.txt; \
-	echo "ALIAS	@	$$CF_TARGET	300" >> dns-records.txt; \
-	echo "SRV	_jmap._tcp	0 1 443 jmap.$(ROOT_DOMAIN)	3600" >> dns-records.txt
+	echo "Type	Name	Value	TTL" > $(TF_DIR)/dns-records.txt; \
+	echo "CNAME	jmap	$$API_TARGET	300" >> $(TF_DIR)/dns-records.txt; \
+	echo "ALIAS	@	$$CF_TARGET	300" >> $(TF_DIR)/dns-records.txt; \
+	echo "SRV	_jmap._tcp	0 1 443 jmap.$(ROOT_DOMAIN)	3600" >> $(TF_DIR)/dns-records.txt
+	@$(MAKE) generate-outputs
 	@echo ""
-	@echo "Deployment complete. Set the values in dns-records.txt at your DNS provider."
+	@echo "Deployment complete. Set the values in $(TF_DIR)/dns-records.txt at your DNS provider."
 	@echo "Wait for propagation (or check with: make validate-dns)"
 	@echo ""
 
@@ -171,7 +192,7 @@ validate-dns:
 			echo "STATUS: All DNS records configured correctly"; \
 		else \
 			echo "STATUS: FAILED - Some permanent DNS records are missing"; \
-			echo "Action: Create missing DNS records from dns-records.txt"; \
+			echo "Action: Create missing DNS records from $(TF_DIR)/dns-records.txt"; \
 		fi; \
 	else \
 		if [ "$$API_DNS_OK" = "true" ] && [ "$$ROOT_DNS_OK" = "true" ] && [ "$$API_CERT_OK" = "true" ] && [ "$$ROOT_CERT_OK" = "true" ]; then \
@@ -180,7 +201,7 @@ validate-dns:
 		else \
 			echo "STATUS: WAITING - Certificate validation in progress"; \
 			if [ "$$API_DNS_OK" = "false" ] || [ "$$ROOT_DNS_OK" = "false" ]; then \
-				echo "Action: Create missing DNS records from dns-records.txt"; \
+				echo "Action: Create missing DNS records from $(TF_DIR)/dns-records.txt"; \
 			else \
 				echo "Action: Wait for DNS propagation and certificate validation (5-15 minutes)"; \
 			fi; \
@@ -274,10 +295,130 @@ set-admin-password: validate-password
 	  fi; \
 	fi
 
+.PHONY: generate-outputs
+generate-outputs:
+	@# Generate infrastructure/variableoutputs.txt with all important outputs
+	@echo "Generating infrastructure/variableoutputs.txt..."
+	@echo "# Infrastructure Outputs" > $(TF_DIR)/variableoutputs.txt; \
+	echo "# Generated: $$(date)" >> $(TF_DIR)/variableoutputs.txt; \
+	echo "" >> $(TF_DIR)/variableoutputs.txt; \
+	if terraform -chdir=$(TF_DIR) state list 2>/dev/null | grep -q 'aws_cloudfront_distribution.autodiscovery'; then \
+	  CF_ID=$$(cd $(TF_DIR) && terraform output -raw cloudfront_distribution_id 2>/dev/null); \
+	  CF_DOMAIN=$$(cd $(TF_DIR) && terraform output -raw cloudfront_autodiscovery_target 2>/dev/null); \
+	  API_TARGET=$$(cd $(TF_DIR) && terraform output -raw api_gateway_target 2>/dev/null); \
+	  API_URL=$$(cd $(TF_DIR) && terraform output -raw jmap_api_url 2>/dev/null); \
+	  SESSION_ENDPOINT=$$(cd $(TF_DIR) && terraform output -raw jmap_session_endpoint 2>/dev/null); \
+	  echo "CloudFront Distribution ID: $$CF_ID" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "CloudFront Domain: $$CF_DOMAIN" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "API Gateway Target: $$API_TARGET" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "JMAP API URL: $$API_URL" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "JMAP Session Endpoint: $$SESSION_ENDPOINT" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "# For web client integration:" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "# Use CloudFront Distribution ID: $$CF_ID" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "# This is needed when deploying the web client in shared mode" >> $(TF_DIR)/variableoutputs.txt; \
+	else \
+	  echo "CloudFront Distribution ID: Not yet deployed" >> $(TF_DIR)/variableoutputs.txt; \
+	  echo "# Run 'make deploy' to create the CloudFront distribution" >> $(TF_DIR)/variableoutputs.txt; \
+	fi; \
+	echo "" >> $(TF_DIR)/variableoutputs.txt; \
+	echo "# To check outputs manually:" >> $(TF_DIR)/variableoutputs.txt; \
+	echo "#   cd infrastructure && terraform output" >> $(TF_DIR)/variableoutputs.txt; \
+	echo "#   cd infrastructure && terraform output cloudfront_distribution_id" >> $(TF_DIR)/variableoutputs.txt
+	@echo "Outputs written to $(TF_DIR)/variableoutputs.txt"
+
+.PHONY: update-s3-endpoint
+update-s3-endpoint:
+	@# Update S3 endpoint in config.mk (can be called after web client deployment)
+	@if [ -z "$(ENDPOINT)" ]; then \
+	  echo ""; \
+	  echo "Enter the S3 website endpoint (e.g., jmap-web-jmapbox-com.s3-website.eu-west-2.amazonaws.com):"; \
+	  read -r s3_endpoint; \
+	else \
+	  s3_endpoint="$(ENDPOINT)"; \
+	fi; \
+	if [ -z "$$s3_endpoint" ]; then \
+	  echo "ERROR: S3 endpoint cannot be empty"; \
+	  exit 1; \
+	fi; \
+	if [ ! -f config.mk ]; then \
+	  echo "ERROR: config.mk not found. Run 'make deploy' first."; \
+	  exit 1; \
+	fi; \
+	if ! grep -q "^SERVE_WEB_CLIENT" config.mk || ! grep -q "^SERVE_WEB_CLIENT.*yes" config.mk; then \
+	  echo "Setting SERVE_WEB_CLIENT = yes"; \
+	  if grep -q "^SERVE_WEB_CLIENT" config.mk; then \
+	    sed -i.bak "s|^SERVE_WEB_CLIENT.*|SERVE_WEB_CLIENT = yes|" config.mk; \
+	  else \
+	    echo "SERVE_WEB_CLIENT = yes" >> config.mk; \
+	  fi; \
+	fi; \
+	if grep -q "^WEB_CLIENT_S3_ENDPOINT" config.mk; then \
+	  sed -i.bak "s|^WEB_CLIENT_S3_ENDPOINT.*|WEB_CLIENT_S3_ENDPOINT = $$s3_endpoint|" config.mk; \
+	  echo "Updated WEB_CLIENT_S3_ENDPOINT in config.mk"; \
+	else \
+	  echo "WEB_CLIENT_S3_ENDPOINT = $$s3_endpoint" >> config.mk; \
+	  echo "Added WEB_CLIENT_S3_ENDPOINT to config.mk"; \
+	fi; \
+	rm -f config.mk.bak; \
+	echo "Configuration updated. Run 'make deploy' to integrate the S3 endpoint."
+
 .PHONY: ensure-config
 ensure-config:
 	@if [ -z "$(REGION)" ] || [ -z "$(ROOT_DOMAIN)" ]; then \
 	  echo "ERROR: Set AWS_REGION and ROOT_DOMAIN in config.mk"; exit 1; \
+	fi
+	@# Interactive prompt for web client integration
+	@if [ -z "$(SERVE_WEB_CLIENT)" ]; then \
+	  echo ""; \
+	  echo "Do you want to serve the web client from this CloudFront? (y/n)"; \
+	  read -r answer; \
+	  if [ "$$answer" = "y" ] || [ "$$answer" = "Y" ]; then \
+	    echo "Enter the S3 website endpoint (e.g., jmap-web-jmapbox-com.s3-website.eu-west-2.amazonaws.com):"; \
+	    echo "(Press Enter to skip for now - you can add it later after deploying the web client)"; \
+	    read -r s3_endpoint; \
+	    if [ -f config.mk ]; then \
+	      if grep -q "^SERVE_WEB_CLIENT" config.mk; then \
+	        sed -i.bak "s|^SERVE_WEB_CLIENT.*|SERVE_WEB_CLIENT = yes|" config.mk; \
+	      else \
+	        echo "SERVE_WEB_CLIENT = yes" >> config.mk; \
+	      fi; \
+	      if [ -n "$$s3_endpoint" ]; then \
+	        if grep -q "^WEB_CLIENT_S3_ENDPOINT" config.mk; then \
+	          sed -i.bak "s|^WEB_CLIENT_S3_ENDPOINT.*|WEB_CLIENT_S3_ENDPOINT = $$s3_endpoint|" config.mk; \
+	        else \
+	          echo "WEB_CLIENT_S3_ENDPOINT = $$s3_endpoint" >> config.mk; \
+	        fi; \
+	      else \
+	        if grep -q "^WEB_CLIENT_S3_ENDPOINT" config.mk; then \
+	          sed -i.bak "/^WEB_CLIENT_S3_ENDPOINT/d" config.mk; \
+	        fi; \
+	        echo "Note: S3 endpoint not set. Deploy server first, then web client, then update config.mk with the S3 endpoint and redeploy."; \
+	      fi; \
+	      rm -f config.mk.bak; \
+	    else \
+	      echo "SERVE_WEB_CLIENT = yes" > config.mk; \
+	      if [ -n "$$s3_endpoint" ]; then \
+	        echo "WEB_CLIENT_S3_ENDPOINT = $$s3_endpoint" >> config.mk; \
+	      fi; \
+	    fi; \
+	    echo "Configuration saved to config.mk"; \
+	  else \
+	    if [ -f config.mk ]; then \
+	      if grep -q "^SERVE_WEB_CLIENT" config.mk; then \
+	        sed -i.bak "s|^SERVE_WEB_CLIENT.*|SERVE_WEB_CLIENT = no|" config.mk; \
+	      else \
+	        echo "SERVE_WEB_CLIENT = no" >> config.mk; \
+	      fi; \
+	      if grep -q "^WEB_CLIENT_S3_ENDPOINT" config.mk; then \
+	        sed -i.bak "/^WEB_CLIENT_S3_ENDPOINT/d" config.mk; \
+	      fi; \
+	      rm -f config.mk.bak; \
+	    else \
+	      echo "SERVE_WEB_CLIENT = no" > config.mk; \
+	    fi; \
+	  fi; \
+	  echo ""; \
 	fi
 
 

@@ -1,3 +1,6 @@
 REGION = eu-west-2
 ROOT_DOMAIN = example.com
 ALLOWED_ORIGINS = http://localhost:5173,https://example.com,
+# Optional: Web client integration
+# SERVE_WEB_CLIENT = yes
+# WEB_CLIENT_S3_ENDPOINT = jmap-web-example-com.s3-website.eu-west-2.amazonaws.com

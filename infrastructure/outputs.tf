@@ -62,6 +62,11 @@ output "cloudfront_autodiscovery_target" {
   value       = try(aws_cloudfront_distribution.autodiscovery[0].domain_name, "Pending - complete certificate validation first")
 }
 
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (needed for web client integration)"
+  value       = try(aws_cloudfront_distribution.autodiscovery[0].id, "Pending - complete certificate validation first")
+}
+
 output "cert_validation_records" {
   description = "Certificate validation CNAME records"
   value = {
