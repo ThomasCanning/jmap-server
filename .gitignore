@@ -21,3 +21,4 @@ env.json
 # Deployment configuration
 config.mk
 dns-records.txt
+variableoutputs.txt
