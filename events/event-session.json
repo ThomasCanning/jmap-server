@@ -1,7 +1,7 @@
 {
   "version": "2.0",
-  "routeKey": "GET /.well-known/jmap",
-  "rawPath": "/.well-known/jmap",
+  "routeKey": "GET /jmap/session",
+  "rawPath": "/jmap/session",
   "rawQueryString": "",
   "headers": {
     "accept": "application/json",
@@ -14,17 +14,18 @@
     "domainPrefix": "jmap",
     "http": {
       "method": "GET",
-      "path": "/.well-known/jmap",
+      "path": "/jmap/session",
       "protocol": "HTTP/1.1",
       "sourceIp": "127.0.0.1",
       "userAgent": "test-agent"
     },
     "requestId": "test-request-id",
-    "routeKey": "GET /.well-known/jmap",
+    "routeKey": "GET /jmap/session",
     "stage": "$default",
     "time": "01/Jan/2024:00:00:00 +0000",
     "timeEpoch": 1704067200000
   },
   "isBase64Encoded": false
 }
+
 

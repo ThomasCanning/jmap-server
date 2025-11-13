@@ -13,7 +13,7 @@ import {
   verifyBearerFromEvent,
   unauthorizedHeadersFor,
   unauthorizedStatusFor,
-  corsHeaders,
+  corsOnlyHeaders,
   withAuth,
   createAuthHandler,
   AuthResult,
@@ -631,25 +631,23 @@ describe('auth.ts', () => {
   })
 
   describe('unauthorizedStatusFor', () => {
-    it('returns 403 for browser requests (with Origin)', () => {
+    it('always returns 401 for unauthorized requests', () => {
       const event = baseEvent({
         headers: { origin: 'https://example.com' },
       })
-      expect(unauthorizedStatusFor(event)).toBe(403)
-    })
-
-    it('returns 401 for API requests (no Origin)', () => {
-      const event = baseEvent()
       expect(unauthorizedStatusFor(event)).toBe(401)
+      
+      const eventNoOrigin = baseEvent()
+      expect(unauthorizedStatusFor(eventNoOrigin)).toBe(401)
     })
   })
 
-  describe('corsHeaders', () => {
+  describe('corsOnlyHeaders', () => {
     it('returns CORS headers for requests with Origin', () => {
       const event = baseEvent({
         headers: { origin: 'https://example.com' },
       })
-      const headers = corsHeaders(event)
+      const headers = corsOnlyHeaders(event)
       expect(headers['Access-Control-Allow-Origin']).toBe('https://example.com')
       expect(headers['Vary']).toBe('Origin')
       expect(headers['Access-Control-Allow-Credentials']).toBe('true')
@@ -659,7 +657,7 @@ describe('auth.ts', () => {
 
     it('returns empty object for requests without Origin', () => {
       const event = baseEvent()
-      const headers = corsHeaders(event)
+      const headers = corsOnlyHeaders(event)
       expect(Object.keys(headers)).toHaveLength(0)
     })
   })

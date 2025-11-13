@@ -89,11 +89,11 @@ Resources:
       DesiredDeliveryMediums: []
       ForceAliasCreation: false
 
-  # Lambda function: JMAP well-known endpoint handler
-  wellKnownJmapFunction:
+  # JMAP API ENDPOINTS
+  jmapSessionFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/well-known-jmap.wellKnownJmapHandler
+      Handler: src/handlers/jmap/session.sessionHandler
       Environment:
         Variables:
           API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap'
@@ -103,7 +103,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref JmapHttpApi
-            Path: /.well-known/jmap
+            Path: /jmap/session
             Method: GET
     Metadata:
       BuildMethod: esbuild
@@ -112,13 +112,13 @@ Resources:
         Target: es2022
         Sourcemap: true
         EntryPoints:
-          - src/handlers/well-known-jmap.ts
+          - src/handlers/jmap/session.ts
 
   # Lambda function: JMAP RPC endpoint (POST)
   jmapFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/jmap.jmapHandler
+      Handler: src/handlers/jmap/rpc.jmapHandler
       Environment:
         Variables:
           USER_POOL_CLIENT_ID: !Ref UserPoolClient
@@ -136,13 +136,16 @@ Resources:
         Target: es2022
         Sourcemap: true
         EntryPoints:
-          - src/handlers/jmap.ts
+          - src/handlers/jmap/rpc.ts
 
-  # Lambda function: Logout (clear cookie)
+  # END OF JMAP API ENDPOINTS
+
+  # AUTH API ENDPOINTS
+
   authLogoutFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/auth-logout.handler
+      Handler: src/handlers/auth/logout.handler
       Events:
         Api:
           Type: HttpApi
@@ -157,13 +160,12 @@ Resources:
         Target: es2022
         Sourcemap: true
         EntryPoints:
-          - src/handlers/auth-logout.ts
+          - src/handlers/auth/logout.ts
 
-  # Lambda function: Get token
-  authTokenFunction:
+  authLoginFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/auth-token.handler
+      Handler: src/handlers/auth/login.handler
       Environment:
         Variables:
           USER_POOL_CLIENT_ID: !Ref UserPoolClient
@@ -172,8 +174,8 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref JmapHttpApi
-            Path: /auth/token
-            Method: GET
+            Path: /auth/login
+            Method: POST
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -181,9 +183,9 @@ Resources:
         Target: es2022
         Sourcemap: true
         EntryPoints:
-          - src/handlers/auth-token.ts
+          - src/handlers/auth/login.ts
 
-  
+  # END OF AUTH API ENDPOINTS
 
   # User pool for auth (cognito)
   UserPool:

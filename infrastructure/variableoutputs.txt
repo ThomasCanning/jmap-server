@@ -1,11 +1,11 @@
 # Infrastructure Outputs
-# Generated: Thu  6 Nov 2025 12:18:17 GMT
+# Generated: Tue 11 Nov 2025 17:44:28 GMT
 
 CloudFront Distribution ID: E1OKM262VXSVN
 CloudFront Domain: d1we13rgf9ao7w.cloudfront.net
-API Gateway Target: d-wdvudh9wjb.execute-api.eu-west-2.amazonaws.com
-JMAP API URL: https://jmap.jmapbox.com
-JMAP Session Endpoint: https://jmap.jmapbox.com/.well-known/jmap
+API Gateway Target: d-7ckecbe0p3.execute-api.eu-west-2.amazonaws.com
+JMAP API URL: https://api.jmapbox.com
+JMAP Session Endpoint: https://api.jmapbox.com/jmap/session
 
 # For web client integration:
 # Use CloudFront Distribution ID: E1OKM262VXSVN

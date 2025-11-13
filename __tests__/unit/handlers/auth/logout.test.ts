@@ -1,8 +1,8 @@
-import { handler } from '../../../src/handlers/auth-logout'
-import * as auth from '../../../src/lib/auth'
+import { handler } from '../../../../src/handlers/auth/logout'
+import * as auth from '../../../../src/lib/auth'
 
-jest.mock('../../../src/lib/auth', () => ({
-  ...jest.requireActual('../../../src/lib/auth'),
+jest.mock('../../../../src/lib/auth', () => ({
+  ...jest.requireActual('../../../../src/lib/auth'),
   clearAccessTokenCookie: jest.fn(),
   clearRefreshTokenCookie: jest.fn(),
 }))

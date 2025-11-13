@@ -5,7 +5,7 @@ RFC 8620 compliant JMAP server with autodiscovery support.
 ## Architecture
 
 - **JMAP API**: `jmap.yourdomain.com` (AWS Lambda + API Gateway)
-- **Autodiscovery**: `yourdomain.com/.well-known/jmap` → 301 redirect to API (CloudFront)
+- **Autodiscovery**: `yourdomain.com/.well-known/jmap` → 301 redirect to `subdomain.domain/jmap/session` (CloudFront)
 - **Authentication**: AWS Cognito (Basic Auth + Bearer tokens)
 - **Protocol**: RFC 8620 JMAP Core
 - **Infrastructure**: Serverless (AWS SAM + Terraform)
@@ -13,7 +13,7 @@ RFC 8620 compliant JMAP server with autodiscovery support.
 ## Features
 
 - RFC 8620 JMAP Core protocol support
-- HTTP-based autodiscovery (`.well-known/jmap`) and SRV records
+- HTTP-based autodiscovery (`.well-known/jmap` redirects to `/jmap/session`) and SRV records
 - Multiple authentication methods (Basic, Bearer tokens, refresh tokens)
 - Cookie-based sessions with automatic refresh
 - CORS support for multiple web clients
@@ -126,7 +126,7 @@ _jmap._tcp.yourdomain.com → jmap.yourdomain.com:443
 ```
 https://yourdomain.com/.well-known/jmap
   → 301 redirect to
-https://jmap.yourdomain.com/.well-known/jmap
+https://jmap.yourdomain.com/jmap/session
 ```
 
 Clients can use either method to discover the JMAP server.
@@ -166,7 +166,7 @@ Server runs at: `http://localhost:3001`
 Test locally:
 
 ```bash
-curl http://localhost:3001/.well-known/jmap
+curl http://localhost:3001/jmap/session
 ```
 
 ## Testing
@@ -189,7 +189,7 @@ View Lambda function logs:
 
 ```bash
 # JMAP session endpoint
-sam logs -n wellKnownJmapFunction --stack-name jmap-server --tail
+sam logs -n jmapSessionFunction --stack-name jmap-server --tail
 
 # JMAP RPC endpoint
 sam logs -n jmapFunction --stack-name jmap-server --tail
@@ -218,12 +218,12 @@ For deployment-related problems (certificate validation, Terraform errors, DNS s
 3. Clear browser cache
 4. Verify CORS headers:
 ```bash
-curl -I -H "Origin: https://your-client.com" https://jmap.yourdomain.com/.well-known/jmap
+curl -I -H "Origin: https://your-client.com" https://jmap.yourdomain.com/jmap/session
 ```
 
 ### API Returns 404
 
-**Problem:** `https://yourdomain.com/.well-known/jmap` returns 404.
+**Problem:** `https://yourdomain.com/.well-known/jmap` returns 404 or doesn't redirect properly.
 
 **Solution:**
 1. Verify DNS records are correct (check Terraform output)
@@ -253,9 +253,9 @@ Don't forget to remove DNS records from your DNS provider.
 ### Components
 
 - **Lambda Functions** (Node.js 22, ARM64):
-  - `wellKnownJmapFunction` - JMAP session endpoint
+  - `jmapSessionFunction` - JMAP session endpoint
   - `jmapFunction` - JMAP RPC endpoint
-  - `authTokenFunction` - Get access token
+  - `authLoginFunction` - Get access token
   - `authLogoutFunction` - Clear session cookie
 
 - **API Gateway HTTP API**:
@@ -265,8 +265,8 @@ Don't forget to remove DNS records from your DNS provider.
 
 - **CloudFront Distribution**:
   - Domain: `yourdomain.com`
-  - When S3 web client is enabled: Serves web client from S3, redirects `/.well-known/jmap` to `jmap.yourdomain.com/.well-known/jmap`
-  - When S3 web client is disabled: Redirects `/.well-known/jmap` to `jmap.yourdomain.com/.well-known/jmap`, returns 404 for all other paths
+  - When S3 web client is enabled: Serves web client from S3, redirects `/.well-known/jmap` to `jmap.yourdomain.com/jmap/session`
+  - When S3 web client is disabled: Redirects `/.well-known/jmap` to `jmap.yourdomain.com/jmap/session`, returns 404 for all other paths
 
 - **ACM Certificates**:
   - API Gateway (regional, in deployment region)

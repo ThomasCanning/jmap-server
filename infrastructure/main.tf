@@ -80,7 +80,7 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
   name    = "jmap-autodiscovery-redirect"
   runtime = "cloudfront-js-1.0"
   publish = true
-  comment = "RFC 8620 JMAP autodiscovery redirect - redirects /.well-known/jmap, returns 404 for other paths when S3 disabled"
+  comment = "RFC 8620 JMAP autodiscovery redirect - redirects /.well-known/jmap to /jmap/session, returns 404 for other paths when S3 disabled"
   code    = <<-EOT
     function handler(event) {
       var request = event.request;
@@ -89,7 +89,7 @@ resource "aws_cloudfront_function" "autodiscovery_redirect" {
           statusCode: 301,
           statusDescription: 'Moved Permanently',
           headers: {
-            location: { value: 'https://${local.fqdn}/.well-known/jmap' },
+            location: { value: 'https://${local.fqdn}/jmap/session' },
             'cache-control': { value: 'public, max-age=3600' }
           }
         };

@@ -1,16 +1,11 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda'
-import { createAuthHandler, AuthenticatedContext, corsHeaders } from '../lib/auth'
+import { createAuthHandler } from '../../lib/auth'
 
-export const wellKnownJmapHandler = createAuthHandler(async (
-  event: APIGatewayProxyEventV2,
-  auth: AuthenticatedContext
+export const sessionHandler = createAuthHandler(async (
+  event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyStructuredResultV2> => {
   return {
     statusCode: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      ...corsHeaders(event),
-    },
     body: JSON.stringify({
       capabilities: {},
       apiUrl: process.env.API_URL || '',

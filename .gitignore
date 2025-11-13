@@ -1,5 +1,6 @@
 # Build artifacts
 .aws-sam/
+dist/
 
 # Terraform state/cache
 infrastructure/.terraform/
@@ -20,9 +21,3 @@ env.json
 # Deployment configuration
 config.mk
 dns-records.txt
-
-node_modules
-
-# Frontend build artifacts
-web/dist/
-web/.tanstack/

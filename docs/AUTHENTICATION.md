@@ -116,7 +116,7 @@ All cookies use these security attributes:
 ### HTTP Method Validation
 
 Method restrictions enforced at **API Gateway level** (not Lambda):
-- `GET /.well-known/jmap`
+- `GET /jmap/session`
 - `POST /jmap`
 - `POST /auth/logout`
 - `GET /auth/token`
@@ -174,7 +174,7 @@ npm test
 **Basic Auth:**
 ```bash
 curl -u "user@example.com:password" \
-  https://jmap.example.com/.well-known/jmap
+  https://jmap.example.com/jmap/session
 ```
 
 **Bearer Token:**

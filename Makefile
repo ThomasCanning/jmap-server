@@ -25,7 +25,7 @@ gen-env-local:
 	@STACK_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].StackId' --output text 2>/dev/null || true); \
 	USER_POOL_CLIENT_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || true); \
 	REG=$(REGION); API_BASE="http://localhost:3001"; \
-	printf '{\n  "wellKnownJmapFunction": {\n    "API_URL": "%s/jmap",\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "jmapFunction": {\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "authTokenFunction": {\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "authLogoutFunction": {}\n}\n' "$$API_BASE" "$$USER_POOL_CLIENT_ID" "$$REG" "$$USER_POOL_CLIENT_ID" "$$REG" "$$USER_POOL_CLIENT_ID" "$$REG" > env.json; \
+	printf '{\n  "jmapSessionFunction": {\n    "API_URL": "%s/jmap",\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "jmapFunction": {\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "authLoginFunction": {\n    "USER_POOL_CLIENT_ID": "%s",\n    "AWS_REGION": "%s"\n  },\n  "authLogoutFunction": {}\n}\n' "$$API_BASE" "$$USER_POOL_CLIENT_ID" "$$REG" "$$USER_POOL_CLIENT_ID" "$$REG" "$$USER_POOL_CLIENT_ID" "$$REG" > env.json; \
 	echo "Wrote env.json (region=$(REGION), client_id=$${USER_POOL_CLIENT_ID:-<unset>})"
 
 deploy: ensure-config sam-deploy set-admin-password tf-apply
@@ -96,14 +96,16 @@ tf-apply:
 deployment-stage1-complete:
 	@# Generate DNS records file
 	@echo "Type	Name	Value	TTL" > $(TF_DIR)/dns-records.txt; \
-	API_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$(ROOT_DOMAIN)\.$$//'); \
+	API_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
 	API_VALUE=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
-	ROOT_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's/\.$(ROOT_DOMAIN)\.$$//'); \
+	ROOT_VALIDATION=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
 	ROOT_VALUE=$$(cd $(TF_DIR) && terraform output -json cert_validation_records 2>/dev/null | grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's/\.$$//'); \
 	echo "CNAME	$$API_VALIDATION	$$API_VALUE	300" >> $(TF_DIR)/dns-records.txt; \
 	if [ "$$ROOT_VALIDATION" != "$$API_VALIDATION" ]; then \
 		echo "CNAME	$$ROOT_VALIDATION	$$ROOT_VALUE	300" >> $(TF_DIR)/dns-records.txt; \
 	fi
+	@# Note: The validation record name already includes the subdomain (e.g., _hash.api.jmapbox.com)
+	@# so it will be correctly written to dns-records.txt
 	@$(MAKE) generate-outputs
 	@echo ""
 	@echo "DNS setup required. Set the values in $(TF_DIR)/dns-records.txt at your DNS provider."
@@ -115,10 +117,11 @@ deployment-complete:
 	@# Generate DNS records file
 	@API_TARGET=$$(cd $(TF_DIR) && terraform output -raw api_gateway_target 2>/dev/null); \
 	CF_TARGET=$$(cd $(TF_DIR) && terraform output -raw cloudfront_autodiscovery_target 2>/dev/null); \
+	API_SUBDOMAIN=$$(cd $(TF_DIR) && terraform output -raw api_subdomain 2>/dev/null || echo "jmap"); \
 	echo "Type	Name	Value	TTL" > $(TF_DIR)/dns-records.txt; \
-	echo "CNAME	jmap	$$API_TARGET	300" >> $(TF_DIR)/dns-records.txt; \
+	echo "CNAME	$$API_SUBDOMAIN	$$API_TARGET	300" >> $(TF_DIR)/dns-records.txt; \
 	echo "ALIAS	@	$$CF_TARGET	300" >> $(TF_DIR)/dns-records.txt; \
-	echo "SRV	_jmap._tcp	0 1 443 jmap.$(ROOT_DOMAIN)	3600" >> $(TF_DIR)/dns-records.txt
+	echo "SRV	_jmap._tcp	0 1 443 $$API_SUBDOMAIN.$(ROOT_DOMAIN)	3600" >> $(TF_DIR)/dns-records.txt
 	@$(MAKE) generate-outputs
 	@echo ""
 	@echo "Deployment complete. Set the values in $(TF_DIR)/dns-records.txt at your DNS provider."
@@ -169,10 +172,11 @@ validate-dns:
 	echo ""; \
 	if terraform -chdir=$(TF_DIR) state list 2>/dev/null | grep -q 'aws_apigatewayv2_domain_name.jmap'; then \
 		PERM_DNS_OK=true; \
-		if dig +short jmap.$(ROOT_DOMAIN) | grep -q .; then \
-			echo "[OK] jmap.$(ROOT_DOMAIN)"; \
+		API_SUBDOMAIN=$$(cd $(TF_DIR) && terraform output -raw api_subdomain 2>/dev/null || echo "jmap"); \
+		if dig +short $$API_SUBDOMAIN.$(ROOT_DOMAIN) | grep -q .; then \
+			echo "[OK] $$API_SUBDOMAIN.$(ROOT_DOMAIN)"; \
 		else \
-			echo "[MISSING] jmap.$(ROOT_DOMAIN)"; \
+			echo "[MISSING] $$API_SUBDOMAIN.$(ROOT_DOMAIN)"; \
 			PERM_DNS_OK=false; \
 		fi; \
 		if dig +short $(ROOT_DOMAIN) | grep -q .; then \
@@ -195,9 +199,12 @@ validate-dns:
 			echo "Action: Create missing DNS records from $(TF_DIR)/dns-records.txt"; \
 		fi; \
 	else \
-		if [ "$$API_DNS_OK" = "true" ] && [ "$$ROOT_DNS_OK" = "true" ] && [ "$$API_CERT_OK" = "true" ] && [ "$$ROOT_CERT_OK" = "true" ]; then \
+		if [ "$$API_CERT_OK" = "true" ] && [ "$$ROOT_CERT_OK" = "true" ]; then \
 			echo "STATUS: READY - Certificates validated"; \
 			echo "Action: Run 'make deploy' to complete infrastructure"; \
+		elif [ "$$API_DNS_OK" = "true" ] && [ "$$ROOT_DNS_OK" = "true" ]; then \
+			echo "STATUS: WAITING - DNS records found, waiting for certificate validation (5-15 minutes)"; \
+			echo "Action: Wait for AWS to validate certificates"; \
 		else \
 			echo "STATUS: WAITING - Certificate validation in progress"; \
 			if [ "$$API_DNS_OK" = "false" ] || [ "$$ROOT_DNS_OK" = "false" ]; then \

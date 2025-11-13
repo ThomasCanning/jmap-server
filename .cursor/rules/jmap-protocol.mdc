@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+This repository implements a jmap server, and as such, everything should strictly comply with rfc8620

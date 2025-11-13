@@ -1,10 +1,15 @@
+output "api_subdomain" {
+  description = "API subdomain name"
+  value       = local.api_subdomain
+}
+
 output "dns_setup_instructions" {
   value = join("\n", concat(
     length(aws_apigatewayv2_domain_name.jmap) > 0 ? [
       "",
       "DNS Records (Permanent):",
       "",
-      "Name:  jmap.${var.root_domain_name}",
+      "Name:  ${local.api_subdomain}.${var.root_domain_name}",
       "Type:  CNAME",
       "Value: ${aws_apigatewayv2_domain_name.jmap[0].domain_name_configuration[0].target_domain_name}",
       "TTL:   300",
@@ -16,7 +21,7 @@ output "dns_setup_instructions" {
       "",
       "Name:  _jmap._tcp.${var.root_domain_name}",
       "Type:  SRV",
-      "Value: 0 1 443 jmap.${var.root_domain_name}",
+      "Value: 0 1 443 ${local.api_subdomain}.${var.root_domain_name}",
       "TTL:   3600",
       ""
     ] : [
@@ -39,12 +44,12 @@ output "dns_setup_instructions" {
 
 output "jmap_api_url" {
   description = "JMAP API base URL"
-  value       = "https://jmap.${var.root_domain_name}"
+  value       = "https://${local.api_subdomain}.${var.root_domain_name}"
 }
 
 output "jmap_session_endpoint" {
   description = "JMAP session endpoint"
-  value       = "https://jmap.${var.root_domain_name}/.well-known/jmap"
+  value       = "https://${local.api_subdomain}.${var.root_domain_name}/jmap/session"
 }
 
 output "autodiscovery_test" {
@@ -53,7 +58,7 @@ output "autodiscovery_test" {
 }
 
 output "api_gateway_target" {
-  description = "Target domain for jmap.domain.com CNAME"
+  description = "Target domain for API subdomain CNAME"
   value       = try(aws_apigatewayv2_domain_name.jmap[0].domain_name_configuration[0].target_domain_name, "Pending - complete certificate validation first")
 }
 

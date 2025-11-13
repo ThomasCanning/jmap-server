@@ -105,7 +105,7 @@ Redeploy the server to integrate the S3 origin:
 make deploy
 ```
 
-The server will now serve the web client from CloudFront at your root domain, while `/.well-known/jmap` redirects to `jmap.yourdomain.com/.well-known/jmap`.
+The server will now serve the web client from CloudFront at your root domain, while `/.well-known/jmap` redirects to `jmap.yourdomain.com/jmap/session`.
 
 ## Output Files
 

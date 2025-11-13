@@ -29,6 +29,6 @@ curl -X POST https://jmap.jmapbox.com/auth/logout \
 ### Session Discovery
 
 ```bash
-curl https://jmap.jmapbox.com/.well-known/jmap \
+curl https://jmap.jmapbox.com/jmap/session \
   -H "Authorization: Bearer $TOKEN"
 ```
