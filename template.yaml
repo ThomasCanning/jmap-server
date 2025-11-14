@@ -37,6 +37,9 @@ Globals:
     Architectures:
       - arm64
     Timeout: 30
+    Environment:
+      Variables:
+        ALLOWED_ORIGINS: !Join [',', !Ref AllowedClientOrigins]
 
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
@@ -146,6 +149,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/auth/logout.handler
+      Environment:
+        Variables:
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
           Type: HttpApi
@@ -184,6 +190,29 @@ Resources:
         Sourcemap: true
         EntryPoints:
           - src/handlers/auth/login.ts
+
+  authTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/auth/token.handler
+      Environment:
+        Variables:
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: /auth/token
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handlers/auth/token.ts
 
   # END OF AUTH API ENDPOINTS
 

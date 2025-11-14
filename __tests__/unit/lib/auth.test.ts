@@ -4,20 +4,18 @@ import * as jose from 'jose'
 import {
   getHeader,
   parseCookies,
+  getTokenFromCookies,
+  parseBasicAuth,
   accessTokenCookie,
   clearAccessTokenCookie,
   refreshTokenCookie,
   clearRefreshTokenCookie,
-  verifyBasicWithCognito,
-  refreshAccessToken,
   verifyBearerFromEvent,
-  unauthorizedHeadersFor,
-  unauthorizedStatusFor,
   corsOnlyHeaders,
   withAuth,
-  createAuthHandler,
   AuthResult,
 } from '../../../src/lib/auth'
+import { authenticate, refresh } from '../../../src/lib/auth/cognito'
 
 // Mock AWS SDK
 jest.mock('@aws-sdk/client-cognito-identity-provider')
@@ -81,6 +79,39 @@ describe('auth.ts', () => {
     })
   })
 
+  describe('getTokenFromCookies', () => {
+    it('extracts token from cookies array', () => {
+      const event = baseEvent({
+        cookies: ['access_token=token123', 'other=value'],
+      })
+      expect(getTokenFromCookies(event, 'access_token')).toBe('token123')
+    })
+
+    it('extracts token from Cookie header', () => {
+      const event = baseEvent({
+        headers: {
+          cookie: 'access_token=token456; other=value',
+        },
+      })
+      expect(getTokenFromCookies(event, 'access_token')).toBe('token456')
+    })
+
+    it('prioritizes cookies array over Cookie header', () => {
+      const event = baseEvent({
+        cookies: ['access_token=array-token'],
+        headers: {
+          cookie: 'access_token=header-token',
+        },
+      })
+      expect(getTokenFromCookies(event, 'access_token')).toBe('array-token')
+    })
+
+    it('returns undefined when token not found', () => {
+      const event = baseEvent()
+      expect(getTokenFromCookies(event, 'access_token')).toBeUndefined()
+    })
+  })
+
   describe('parseCookies', () => {
     it('parses single cookie', () => {
       const result = parseCookies('session_id=abc123')
@@ -126,7 +157,7 @@ describe('auth.ts', () => {
 
   describe('accessTokenCookie', () => {
     it('creates cookie with correct attributes', () => {
-      const cookie = accessTokenCookie('token123', 3600)
+      const cookie = accessTokenCookie('token123')
       expect(cookie).toContain('access_token=token123')
       expect(cookie).toContain('HttpOnly')
       expect(cookie).toContain('Secure')
@@ -136,7 +167,7 @@ describe('auth.ts', () => {
     })
 
     it('URL-encodes token value', () => {
-      const cookie = accessTokenCookie('token with spaces', 3600)
+      const cookie = accessTokenCookie('token with spaces')
       expect(cookie).toContain('access_token=token%20with%20spaces')
     })
   })
@@ -153,7 +184,7 @@ describe('auth.ts', () => {
 
   describe('refreshTokenCookie', () => {
     it('creates cookie with correct attributes', () => {
-      const cookie = refreshTokenCookie('refresh123', 2592000)
+      const cookie = refreshTokenCookie('refresh123')
       expect(cookie).toContain('refresh_token=refresh123')
       expect(cookie).toContain('HttpOnly')
       expect(cookie).toContain('Secure')
@@ -173,7 +204,68 @@ describe('auth.ts', () => {
     })
   })
 
-  describe('verifyBasicWithCognito', () => {
+  describe('parseBasicAuth', () => {
+    it('parses valid Basic auth header', () => {
+      const authHeader = 'Basic ' + Buffer.from('user@example.com:password123').toString('base64')
+      const result = parseBasicAuth(authHeader)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.username).toBe('user@example.com')
+        expect(result.password).toBe('password123')
+      }
+    })
+
+    it('returns error when Authorization header is missing', () => {
+      const result = parseBasicAuth(undefined)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.statusCode).toBe(401)
+        expect(result.message).toBe('Missing Basic auth')
+      }
+    })
+
+    it('returns error when Authorization header is not Basic', () => {
+      const result = parseBasicAuth('Bearer token123')
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.statusCode).toBe(401)
+        expect(result.message).toBe('Missing Basic auth')
+      }
+    })
+
+    it('returns error on invalid Base64', () => {
+      const result = parseBasicAuth('Basic !!!invalid!!!')
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.statusCode).toBe(400)
+        expect(result.message).toBe('Invalid Base64')
+      }
+    })
+
+    it('returns error when credentials lack colon separator', () => {
+      const authHeader = 'Basic ' + Buffer.from('usernameonly').toString('base64')
+      const result = parseBasicAuth(authHeader)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.statusCode).toBe(400)
+        expect(result.message).toBe('Invalid Basic format')
+      }
+    })
+
+    it('handles username with colon in password', () => {
+      const authHeader = 'Basic ' + Buffer.from('user:pass:word:123').toString('base64')
+      const result = parseBasicAuth(authHeader)
+
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.username).toBe('user')
+        expect(result.password).toBe('pass:word:123')
+      }
+    })
+  })
+
+  describe('authenticate', () => {
     it('returns success with tokens on valid credentials', async () => {
       mockSend.mockResolvedValue({
         AuthenticationResult: {
@@ -182,8 +274,7 @@ describe('auth.ts', () => {
         },
       })
 
-      const authHeader = 'Basic ' + Buffer.from('user@example.com:password123').toString('base64')
-      const result = await verifyBasicWithCognito(authHeader, TEST_CLIENT_ID)
+      const result = await authenticate('user@example.com', 'password123', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(true)
       if (result.ok) {
@@ -195,67 +286,12 @@ describe('auth.ts', () => {
       expect(mockSend).toHaveBeenCalledWith(expect.any(InitiateAuthCommand))
     })
 
-    it('returns error when Authorization header is missing', async () => {
-      const result = await verifyBasicWithCognito(undefined, TEST_CLIENT_ID)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(401)
-        expect(result.message).toBe('Missing Basic auth')
-      }
-    })
-
-    it('returns error when Authorization header is not Basic', async () => {
-      const result = await verifyBasicWithCognito('Bearer token123', TEST_CLIENT_ID)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(401)
-        expect(result.message).toBe('Missing Basic auth')
-      }
-    })
-
-    it('returns error on invalid Base64', async () => {
-      // Node.js Buffer.from with base64 is lenient and may not throw
-      // Testing with actually invalid data that causes parsing issues
-      const result = await verifyBasicWithCognito('Basic !!!invalid!!!', TEST_CLIENT_ID)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(400)
-        // May be either Invalid Base64 or Invalid Basic format depending on decode result
-        expect([400]).toContain(result.statusCode)
-      }
-    })
-
-    it('returns error when credentials lack colon separator', async () => {
-      const authHeader = 'Basic ' + Buffer.from('usernameonly').toString('base64')
-      const result = await verifyBasicWithCognito(authHeader, TEST_CLIENT_ID)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(400)
-        expect(result.message).toBe('Invalid Basic format')
-      }
-    })
-
-    it('handles username with colon in password', async () => {
-      mockSend.mockResolvedValue({
-        AuthenticationResult: {
-          AccessToken: 'access-token-123',
-        },
-      })
-
-      const authHeader = 'Basic ' + Buffer.from('user:pass:word:123').toString('base64')
-      const result = await verifyBasicWithCognito(authHeader, TEST_CLIENT_ID)
-
-      expect(result.ok).toBe(true)
-      expect(mockSend).toHaveBeenCalledTimes(1)
-    })
-
     it('returns error when Cognito returns no access token', async () => {
       mockSend.mockResolvedValue({
         AuthenticationResult: {},
       })
 
-      const authHeader = 'Basic ' + Buffer.from('user:pass').toString('base64')
-      const result = await verifyBasicWithCognito(authHeader, TEST_CLIENT_ID)
+      const result = await authenticate('user', 'pass', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(false)
       if (!result.ok) {
@@ -267,8 +303,7 @@ describe('auth.ts', () => {
     it('returns error on Cognito authentication failure', async () => {
       mockSend.mockRejectedValue(new Error('NotAuthorizedException'))
 
-      const authHeader = 'Basic ' + Buffer.from('user:wrongpass').toString('base64')
-      const result = await verifyBasicWithCognito(authHeader, TEST_CLIENT_ID)
+      const result = await authenticate('user', 'wrongpass', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(false)
       if (!result.ok) {
@@ -278,7 +313,7 @@ describe('auth.ts', () => {
     })
   })
 
-  describe('refreshAccessToken', () => {
+  describe('refresh', () => {
     it('returns new tokens on successful refresh', async () => {
       mockSend.mockResolvedValue({
         AuthenticationResult: {
@@ -287,7 +322,7 @@ describe('auth.ts', () => {
         },
       })
 
-      const result = await refreshAccessToken('old-refresh-token', TEST_CLIENT_ID)
+      const result = await refresh('old-refresh-token', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(true)
       if (result.ok) {
@@ -306,7 +341,7 @@ describe('auth.ts', () => {
         },
       })
 
-      const result = await refreshAccessToken('old-refresh-token', TEST_CLIENT_ID)
+      const result = await refresh('old-refresh-token', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(true)
       if (result.ok) {
@@ -320,7 +355,7 @@ describe('auth.ts', () => {
         AuthenticationResult: {},
       })
 
-      const result = await refreshAccessToken('refresh-token', TEST_CLIENT_ID)
+      const result = await refresh('refresh-token', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(false)
       if (!result.ok) {
@@ -332,7 +367,7 @@ describe('auth.ts', () => {
     it('returns error on Cognito refresh failure', async () => {
       mockSend.mockRejectedValue(new Error('NotAuthorizedException'))
 
-      const result = await refreshAccessToken('expired-token', TEST_CLIENT_ID)
+      const result = await refresh('expired-token', TEST_CLIENT_ID)
 
       expect(result.ok).toBe(false)
       if (!result.ok) {
@@ -616,31 +651,6 @@ describe('auth.ts', () => {
     })
   })
 
-  describe('unauthorizedHeadersFor', () => {
-    it('returns Content-Type header', () => {
-      const event = baseEvent()
-      const headers = unauthorizedHeadersFor(event)
-      expect(headers['Content-Type']).toBe('application/json')
-    })
-
-    it('does not include WWW-Authenticate', () => {
-      const event = baseEvent()
-      const headers = unauthorizedHeadersFor(event)
-      expect(headers['WWW-Authenticate']).toBeUndefined()
-    })
-  })
-
-  describe('unauthorizedStatusFor', () => {
-    it('always returns 401 for unauthorized requests', () => {
-      const event = baseEvent({
-        headers: { origin: 'https://example.com' },
-      })
-      expect(unauthorizedStatusFor(event)).toBe(401)
-      
-      const eventNoOrigin = baseEvent()
-      expect(unauthorizedStatusFor(eventNoOrigin)).toBe(401)
-    })
-  })
 
   describe('corsOnlyHeaders', () => {
     it('returns CORS headers for requests with Origin', () => {
@@ -828,7 +838,7 @@ describe('auth.ts', () => {
       mockSend.mockRejectedValueOnce(new Error('Invalid credentials'))
 
       const handler = jest.fn()
-      const wrapped = withAuth(handler, { requireAuth: true })
+      const wrapped = withAuth(handler)
       const event = baseEvent()
 
       const response = await wrapped(event)
@@ -1004,53 +1014,4 @@ describe('auth.ts', () => {
     })
   })
 
-  describe('createAuthHandler', () => {
-    beforeEach(() => {
-      // Reset mocks for clean state
-      mockJwtVerify.mockReset()
-      mockSend.mockReset()
-      mockCreateRemoteJWKSet.mockReset()
-    })
-
-    it('wraps handler with auth requirement', async () => {
-      mockCreateRemoteJWKSet.mockReturnValue((() => {}) as any)
-      mockJwtVerify.mockResolvedValue({
-        payload: {
-          iss: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test',
-          token_use: 'access',
-          client_id: TEST_CLIENT_ID,
-        },
-        protectedHeader: { alg: 'RS256' },
-      } as any)
-
-      const handler = jest.fn().mockResolvedValue({
-        statusCode: 200,
-        body: '{}',
-      })
-
-      const wrapped = createAuthHandler(handler)
-      const event = baseEvent({
-        headers: { authorization: `Bearer ${TEST_ACCESS_TOKEN}` },
-      })
-
-      const response = await wrapped(event)
-
-      expect(response.statusCode).toBe(200)
-      expect(handler).toHaveBeenCalledWith(
-        event,
-        expect.objectContaining({ ok: true })
-      )
-    })
-
-    it('requires authentication', async () => {
-      const handler = jest.fn()
-      const wrapped = createAuthHandler(handler)
-      const event = baseEvent()
-
-      const response = await wrapped(event)
-
-      expect(response.statusCode).toBe(401)
-      expect(handler).not.toHaveBeenCalled()
-    })
-  })
 })

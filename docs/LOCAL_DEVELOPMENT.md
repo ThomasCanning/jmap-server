@@ -108,15 +108,42 @@ Then attach debugger in VS Code or Chrome DevTools.
 
 ## Environment Variables
 
-Local development uses environment variables from:
-- `.env` file (if exists)
-- SAM local environment configuration
-- Default values in code
+The `env.json` file is automatically generated from `template.yaml` when you run `make local`. It includes all Lambda functions and their required environment variables.
+
+**Note:** You don't need to manually update `env.json` when adding new functions—the script reads from `template.yaml` automatically.
 
 Key variables:
-- `USER_POOL_CLIENT_ID` - Cognito User Pool Client ID
+- `USER_POOL_CLIENT_ID` - Cognito User Pool Client ID (fetched from deployed stack)
 - `AWS_REGION` - AWS region
-- `LOG_LEVEL` - Logging level (optional)
+- `API_URL` - Base API URL (for session endpoint)
+
+## Troubleshooting
+
+### "ENOENT: no such file or directory, uv_cwd" Error
+
+If you see this error, it's a SAM local runtime issue. Try:
+
+1. **Clean rebuild:**
+   ```bash
+   rm -rf .aws-sam
+   make local
+   ```
+
+2. **Ensure you're in the project root:**
+   ```bash
+   pwd  # Should be in jmap-server directory
+   ```
+
+3. **Check Docker is running:**
+   ```bash
+   docker info
+   ```
+
+### Other Issues
+
+- **Build errors:** Run `sam build --use-container` manually
+- **Missing env vars:** Check `env.json` exists and has all functions
+- **Port already in use:** Stop other services on port 3001
 
 ## Limitations
 

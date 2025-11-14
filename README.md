@@ -83,6 +83,7 @@ View Lambda function logs:
 ```bash
 sam logs -n jmapSessionFunction --stack-name jmap-server --tail
 sam logs -n jmapFunction --stack-name jmap-server --tail
+sam logs -n authLoginFunction --stack-name jmap-server --tail
 sam logs -n authTokenFunction --stack-name jmap-server --tail
 sam logs -n authLogoutFunction --stack-name jmap-server --tail
 ```
