@@ -516,7 +516,7 @@ test:
 	@npm test
 
 # Run backend (SAM) locally
-local: lint
+local:
 	@command -v sam >/dev/null || (echo "ERROR: AWS SAM CLI not found"; exit 1)
 	@docker info >/dev/null 2>&1 || (echo "ERROR: Docker is not running"; exit 1)
 	@$(MAKE) gen-env-local >/dev/null || true
