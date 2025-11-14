@@ -10,9 +10,11 @@ import {
 } from "../../lib/auth"
 import { AuthResult } from "../../lib/auth/types"
 import { validateEnvVar } from "../../lib/env"
-import { TokenRequest } from "./token"
 
-export type LoginRequest = Pick<TokenRequest, "username" | "password">
+export type LoginRequest = {
+  username: string
+  password: string
+}
 
 export interface LoginResponse {
   success: boolean
@@ -26,10 +28,10 @@ export const handler = async (
     return handleAuthError(event, clientIdResult)
   }
 
-  let body: TokenRequest | undefined
+  let body: LoginRequest | undefined
   if (event.body) {
     try {
-      body = JSON.parse(event.body) as TokenRequest
+      body = JSON.parse(event.body) as LoginRequest
     } catch {
       return handleAuthError(event, {
         ok: false,
@@ -46,6 +48,7 @@ export const handler = async (
     username = body.username
     password = body.password
   } else {
+    // Try basic auth header if no body is provided
     const authzHeader = getHeader(event, "authorization")
     const basicAuth = parseBasicAuth(authzHeader)
     if (!basicAuth.ok) {
