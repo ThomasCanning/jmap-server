@@ -1,8 +1,15 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda'
 import { JWTPayload } from 'jose'
 
+export interface CognitoJWTClaims extends JWTPayload {
+  token_use?: 'access' | 'id' | 'refresh'
+  client_id?: string
+  username?: string
+  'cognito:username'?: string
+}
+
 export type AuthResult =
-  | { ok: true; username?: string; bearerToken?: string; refreshToken?: string; claims?: JWTPayload }
+  | { ok: true; username?: string; bearerToken?: string; refreshToken?: string; claims?: CognitoJWTClaims }
   | { ok: false; statusCode: number; message: string }
 
 export type AuthenticatedContext = AuthResult & { ok: true }
@@ -12,7 +19,7 @@ export type HandlerFunction = (
   auth: AuthenticatedContext
 ) => Promise<APIGatewayProxyStructuredResultV2>
 
-export interface AuthOptions {
-  requireAuth?: boolean
+export function isAuthenticatedContext(result: AuthResult): result is AuthenticatedContext {
+  return result.ok === true
 }
 

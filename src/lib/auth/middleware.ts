@@ -1,217 +1,217 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda'
-import { AuthenticatedContext, HandlerFunction, AuthOptions, AuthResult } from './types'
-import { getHeader, parseCookies, unauthorizedHeadersFor, unauthorizedStatusFor, jsonResponseHeaders } from './headers'
-import { accessTokenCookie, refreshTokenCookie } from './cookies'
+import { AuthenticatedContext, HandlerFunction, AuthResult, isAuthenticatedContext } from './types'
+import { getHeader, jsonResponseHeaders, parseBasicAuth } from './headers'
+import { getTokenFromCookies } from './cookies'
+import { setAuthCookies } from './cookies'
 import { verifyBearerFromEvent } from './verification'
-import { verifyBasicWithCognito, refreshAccessToken } from './cognito'
+import { authenticate, refresh } from './cognito'
+import { createAuthErrorResponse } from './responses'
+import { validateEnvVar } from '../env'
+import { decodeJwt } from 'jose'
 
-// Cookie configuration constants
-const DEFAULT_COOKIE_MAX_AGE = 3600 // 1 hour (matches Cognito access token lifetime)
-const REFRESH_TOKEN_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
-
-/**
- * Wraps a handler function with centralized authentication logic.
- * 
- * Authentication flow:
- * 1. Check cookies for Bearer token (browser-based auth)
- * 2. Check Authorization header for Bearer token (API clients)
- * 3. If Bearer fails and token was from cookie, try refresh token (automatic refresh)
- * 4. If Bearer fails and no Bearer header present, try Basic auth
- * 
- * Automatic Token Refresh:
- * - If access token is expired/invalid and came from a cookie, automatically attempts refresh
- * - Uses refresh_token cookie if available
- * - Updates both access_token and refresh_token cookies on successful refresh
- * - Transparent to client - no error is returned, request continues normally
- * 
- * Note: Cookies are always set when Basic auth succeeds (for browser session management).
- * 
- * @param handler - The handler function to wrap. Receives event and authenticated context.
- * @param options - Configuration options
- *   - requireAuth: If true, returns 401 if auth fails. Default: true.
- */
-export function withAuth(
-  handler: HandlerFunction,
-  options: AuthOptions = {}
-): (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyStructuredResultV2> {
-  const {
-    requireAuth = true,
-  } = options
-
-  return async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
-    try {
-      const clientId = process.env.USER_POOL_CLIENT_ID
-      if (!clientId) {
-        console.error('Missing USER_POOL_CLIENT_ID env var')
-        return {
-          statusCode: 500,
-          headers: jsonResponseHeaders(event),
-          body: JSON.stringify({ error: 'Server misconfiguration (USER_POOL_CLIENT_ID missing)' }),
-        }
-      }
-
-      // 1) Try Bearer token, extracting it from cookies
-      // Track if token came from cookie (for auto-refresh) BEFORE verification
-      const cookiesArray = event.cookies || []
-      const cookieHeader = getHeader(event, 'cookie')
-      const cookies = cookieHeader ? parseCookies(cookieHeader) : {}
-      const tokenSourceWasCookie = cookiesArray.some(c => c.startsWith('access_token=')) || 
-                                   !!cookies['access_token']
-      
-      // Check if refresh token is present (even if access token has expired and wasn't sent)
-      const hasRefreshToken = cookiesArray.some(c => c.startsWith('refresh_token=')) || 
-                             !!cookies['refresh_token']
-      // Verify bearer, check cookies first, then Authorization header
-      let authResult = await verifyBearerFromEvent(event, clientId)
-
-      // 2) If Bearer fails and we have a refresh token (even if access token expired), try refresh
-      // This handles the case where the access_token cookie expired so browser didn't send it
-      if (!authResult.ok && (tokenSourceWasCookie || hasRefreshToken)) {
-        // Extract refresh token from cookie (reuse parsed cookies)
-        let refreshToken: string | undefined
-        for (const cookie of cookiesArray) {
-          if (cookie.startsWith('refresh_token=')) {
-            refreshToken = cookie.substring('refresh_token='.length)
-            break
-          }
-        }
-        if (!refreshToken && cookies['refresh_token']) {
-          refreshToken = cookies['refresh_token']
-        }
-
-        // If refresh token exists, try to refresh
-        if (refreshToken) {
-          const refreshed = await refreshAccessToken(refreshToken, clientId)
-          if (refreshed.ok && refreshed.bearerToken) {
-            authResult = refreshed
-            
-            // Update cookies with new tokens
-            const handlerResponse = await handler(event, authResult as AuthenticatedContext)
-            const cookieHeaders: string[] = []
-            cookieHeaders.push(accessTokenCookie(refreshed.bearerToken, DEFAULT_COOKIE_MAX_AGE))
-            if (refreshed.refreshToken) {
-              cookieHeaders.push(refreshTokenCookie(refreshed.refreshToken, REFRESH_TOKEN_MAX_AGE))
-            }
-            
-            return {
-              ...handlerResponse,
-              headers: {
-                ...jsonResponseHeaders(event),
-                ...handlerResponse.headers, // Allow handler to override headers if needed
-              },
-              cookies: cookieHeaders,
-            }
-          }
-          // If refresh failed, continue to Basic auth fallback
-        }
-      }
-
-      // 3) If Bearer fails, try Basic auth (only if Authorization header doesn't have Bearer)
-      if (!authResult.ok) {
-        const authzHeader =
-          (event.headers?.authorization as string) ?? (event.headers?.Authorization as string)
-
-        // Only try Basic if there's no Bearer token in the header
-        // (if Bearer was present but invalid, return that error instead)
-        if (!authzHeader?.startsWith('Bearer ')) {
-          const basic = await verifyBasicWithCognito(authzHeader, clientId)
-
-          if (basic.ok && basic.bearerToken) {
-            authResult = basic
-
-            // Always set cookies when Basic auth succeeds (for browser session management)
-            const handlerResponse = await handler(event, authResult as AuthenticatedContext)
-            const cookieHeaders: string[] = []
-            cookieHeaders.push(accessTokenCookie(basic.bearerToken, DEFAULT_COOKIE_MAX_AGE))
-            if (basic.refreshToken) {
-              cookieHeaders.push(refreshTokenCookie(basic.refreshToken, REFRESH_TOKEN_MAX_AGE))
-            }
-            
-            return {
-              ...handlerResponse,
-              headers: {
-                ...jsonResponseHeaders(event),
-                ...handlerResponse.headers, // Allow handler to override headers if needed
-              },
-              cookies: cookieHeaders,
-            }
-          } else if (requireAuth) {
-            // Check if no authentication method was provided at all
-            const noAuthProvided = 
-              !authResult.ok && 
-              authResult.message === 'Missing Bearer token' && 
-              !basic.ok &&
-              basic.message === 'Missing Basic auth' &&
-              !authzHeader
-
-            if (noAuthProvided) {
-              return {
-                statusCode: 401,
-                headers: jsonResponseHeaders(event),
-                body: JSON.stringify({ 
-                  error: 'No authentication method provided. Call /auth/login with username and password to get an access token, or use Basic auth with the Authorization header.' 
-                }),
-              }
-            }
-
-            // Auth required but both Bearer and Basic failed
-            return {
-              statusCode: basic.ok ? unauthorizedStatusFor(event) : basic.statusCode,
-              headers: jsonResponseHeaders(event),
-              body: JSON.stringify({ error: basic.ok ? 'Unauthorized' : basic.message }),
-            }
-          }
-        } else if (requireAuth) {
-          // Bearer token was present but invalid - return Bearer error
-          return {
-            statusCode: authResult.statusCode,
-            headers: jsonResponseHeaders(event),
-            body: JSON.stringify({ error: authResult.message }),
-          }
-        }
-      }
-
-      // If auth succeeded, call handler with auth context
-      if (authResult.ok) {
-        const handlerResponse = await handler(event, authResult as AuthenticatedContext)
-        return {
-          ...handlerResponse,
-          headers: {
-            ...jsonResponseHeaders(event),
-            ...handlerResponse.headers, // Allow handler to override headers if needed
-          },
-        }
-      }
-
-      // If auth not required and failed, we still need to provide auth context
-      // But since auth failed, we can't call the handler (it requires auth)
-      // This case shouldn't happen if requireAuth is false
-      if (!requireAuth) {
-        // For optional auth handlers, create a wrapper that makes auth optional
-        // But since we're requiring it in the type, this shouldn't be reached
-        throw new Error('Handler requires auth but requireAuth is false')
-      }
-
-      // Should not reach here, but TypeScript needs this
-      return {
-        statusCode: 401,
-        headers: unauthorizedHeadersFor(event),
-        body: JSON.stringify({ error: 'Unauthorized' }),
-      }
-    } catch (error) {
-      console.error('Handler error:', error)
-      return {
-        statusCode: 500,
-        headers: jsonResponseHeaders(event),
-        body: JSON.stringify({ error: 'Internal server error' }),
-      }
-    }
+function extractUsernameFromToken(token: string): string | undefined {
+  try {
+    const decoded = decodeJwt(token)
+    return (decoded.username || decoded['cognito:username'] || decoded.sub) as string | undefined
+  } catch {
+    return undefined
   }
 }
 
-export function createAuthHandler(
-  handler: HandlerFunction
-): (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyStructuredResultV2> {
-  return withAuth(handler, { requireAuth: true })
+function ensureUsername(auth: AuthenticatedContext): AuthenticatedContext {
+  if (!auth.username && auth.bearerToken) {
+    const username = extractUsernameFromToken(auth.bearerToken)
+    return { ...auth, username }
+  }
+  return auth
 }
 
+function buildResponseWithCookies(
+  handlerResponse: APIGatewayProxyStructuredResultV2,
+  event: APIGatewayProxyEventV2,
+  bearerToken?: string,
+  refreshToken?: string
+): APIGatewayProxyStructuredResultV2 {
+  const cookieHeaders = setAuthCookies(bearerToken, refreshToken)
+  return {
+    ...handlerResponse,
+    headers: {
+      ...jsonResponseHeaders(event),
+      ...handlerResponse.headers,
+    },
+    cookies: cookieHeaders,
+  }
+}
+
+async function tryRefreshToken(
+  event: APIGatewayProxyEventV2,
+  clientId: string
+): Promise<AuthResult | null> {
+  const refreshToken = getTokenFromCookies(event, 'refresh_token')
+  if (!refreshToken) {
+    return null
+  }
+
+  const refreshed = await refresh(refreshToken, clientId)
+  if (refreshed.ok && refreshed.bearerToken) {
+    return refreshed
+  }
+
+  return null
+}
+
+type BasicAuthResult = AuthResult | { ok: false; statusCode: 401; message: string; skipBasicAuth: true }
+
+async function tryBasicAuth(
+  event: APIGatewayProxyEventV2,
+  clientId: string
+): Promise<BasicAuthResult> {
+  const authzHeader = getHeader(event, 'authorization')
+  
+  if (authzHeader?.startsWith('Bearer ')) {
+    return { ok: false, statusCode: 401, message: 'Bearer token provided', skipBasicAuth: true }
+  }
+
+  const basicAuth = parseBasicAuth(authzHeader)
+  if (!basicAuth.ok) {
+    return basicAuth
+  }
+
+  return await authenticate(basicAuth.username, basicAuth.password, clientId)
+}
+
+function isNoAuthProvided(authResult: AuthResult, basicResult: BasicAuthResult, authzHeader: string | undefined): boolean {
+  return (
+    !authResult.ok &&
+    authResult.message === 'Missing Bearer token' &&
+    !basicResult.ok &&
+    basicResult.message === 'Missing Basic auth' &&
+    !authzHeader
+  )
+}
+
+async function handleRefreshFlow(
+  event: APIGatewayProxyEventV2,
+  clientId: string,
+  handler: HandlerFunction
+): Promise<APIGatewayProxyStructuredResultV2 | null> {
+  const tokenSourceWasCookie = !!getTokenFromCookies(event, 'access_token')
+  const hasRefreshToken = !!getTokenFromCookies(event, 'refresh_token')
+  
+  if (!tokenSourceWasCookie && !hasRefreshToken) {
+    return null
+  }
+
+  const refreshed = await tryRefreshToken(event, clientId)
+  if (refreshed && isAuthenticatedContext(refreshed)) {
+    const authWithUsername = ensureUsername(refreshed)
+    const handlerResponse = await handler(event, authWithUsername)
+    return buildResponseWithCookies(handlerResponse, event, refreshed.bearerToken, refreshed.refreshToken)
+  }
+
+  return null
+}
+
+async function handleBasicAuthFlow(
+  event: APIGatewayProxyEventV2,
+  clientId: string,
+  bearerAuthResult: AuthResult,
+  handler: HandlerFunction
+): Promise<APIGatewayProxyStructuredResultV2 | null> {
+  const basic = await tryBasicAuth(event, clientId)
+  
+  if (basic.ok === false && 'skipBasicAuth' in basic && basic.skipBasicAuth) {
+    return null // Bearer was provided but invalid, don't try Basic
+  }
+  
+  if (isAuthenticatedContext(basic) && basic.bearerToken) {
+    const authWithUsername = ensureUsername(basic)
+    const handlerResponse = await handler(event, authWithUsername)
+    return buildResponseWithCookies(handlerResponse, event, basic.bearerToken, basic.refreshToken)
+  }
+
+  const authzHeader = getHeader(event, 'authorization')
+  if (isNoAuthProvided(bearerAuthResult, basic, authzHeader)) {
+    return createAuthErrorResponse(
+      event,
+      401,
+      'No authentication method provided. Call /auth/login with username and password to get an access token, or use Basic auth with the Authorization header.'
+    )
+  }
+
+  if (!basic.ok) {
+    return createAuthErrorResponse(event, basic.statusCode, basic.message)
+  }
+
+  if (authzHeader?.startsWith('Bearer ') && !bearerAuthResult.ok) {
+    return createAuthErrorResponse(event, bearerAuthResult.statusCode, bearerAuthResult.message)
+  }
+
+  return null
+}
+
+async function handleBearerSuccess(
+  event: APIGatewayProxyEventV2,
+  authResult: AuthenticatedContext,
+  handler: HandlerFunction
+): Promise<APIGatewayProxyStructuredResultV2> {
+  const handlerResponse = await handler(event, authResult)
+  return {
+    ...handlerResponse,
+    headers: {
+      ...jsonResponseHeaders(event),
+      ...handlerResponse.headers,
+    },
+  }
+}
+
+export function withAuth(
+  handler: HandlerFunction
+): (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyStructuredResultV2> {
+  return async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
+    try {
+      const clientIdResult = validateEnvVar('USER_POOL_CLIENT_ID', process.env.USER_POOL_CLIENT_ID)
+      if (!clientIdResult.ok) {
+        return createAuthErrorResponse(event, clientIdResult.statusCode, clientIdResult.message)
+      }
+      const clientId = clientIdResult.value
+
+      // Try Bearer token first
+      const bearerAuthResult = await verifyBearerFromEvent(event, clientId)
+      
+      if (isAuthenticatedContext(bearerAuthResult)) {
+        return await handleBearerSuccess(event, bearerAuthResult, handler)
+      }
+
+      // Try refresh token if Bearer failed and we have cookies
+      const refreshResponse = await handleRefreshFlow(event, clientId, handler)
+      if (refreshResponse) {
+        return refreshResponse
+      }
+
+      // Try Basic auth if Bearer failed
+      const basicResponse = await handleBasicAuthFlow(event, clientId, bearerAuthResult, handler)
+      if (basicResponse) {
+        return basicResponse
+      }
+
+      // Fallback: unexpected state
+      console.error('[auth] Unexpected auth state in withAuth', {
+        path: event.requestContext?.http?.path,
+        method: event.requestContext?.http?.method,
+        authResultOk: bearerAuthResult.ok,
+      })
+      return createAuthErrorResponse(event, 401, 'Unauthorized')
+    } catch (error) {
+      const err = error as Error
+      console.error('[auth] Handler error', {
+        path: event.requestContext?.http?.path,
+        method: event.requestContext?.http?.method,
+        error: err.message,
+        errorName: err.name,
+        stack: err.stack,
+      })
+      return createAuthErrorResponse(event, 500, 'Internal server error')
+    }
+  }
+}

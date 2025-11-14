@@ -1,5 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda'
-import { authenticateRequest, handleAuthError, setAuthCookies, jsonResponseHeaders, isAuthenticatedContext } from '../../lib/auth'
+import { authenticateRequest, handleAuthError, jsonResponseHeaders, isAuthenticatedContext } from '../../lib/auth'
 
 export const handler = async (
   event: APIGatewayProxyEventV2
@@ -10,11 +10,13 @@ export const handler = async (
     return handleAuthError(event, result)
   }
 
-  const cookieHeaders = setAuthCookies(result.bearerToken, result.refreshToken)
   return {
     statusCode: 200,
     headers: jsonResponseHeaders(event),
-    cookies: cookieHeaders,
-    body: JSON.stringify({ success: true }),
+    body: JSON.stringify({
+      accessToken: result.bearerToken,
+      refreshToken: result.refreshToken,
+    }),
   }
 }
+

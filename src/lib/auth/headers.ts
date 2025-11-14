@@ -3,47 +3,29 @@ import { APIGatewayProxyEventV2 } from 'aws-lambda'
 export function getHeader(event: APIGatewayProxyEventV2, name: string): string | undefined {
   const h = event.headers
   if (!h) return undefined
-  // Check exact match, lowercase, uppercase, and title case (e.g., "Authorization")
-  const titleCase = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
-  return (h[name] ?? h[name.toLowerCase()] ?? h[name.toUpperCase()] ?? h[titleCase]) as string | undefined
+  return h[name.toLowerCase()] as string | undefined
 }
 
-export function parseCookies(header: string | undefined): Record<string, string> {
-  if (!header) return {}
-  const out: Record<string, string> = {}
-  header.split(';').forEach((part) => {
-    const [k, ...rest] = part.trim().split('=')
-    if (!k) return
-    const key = k.trim()
-    const value = rest.join('=').trim()
-    out[key] = decodeURIComponent(value)
-  })
-  return out
+function getAllowedOrigins(): string[] {
+  const origins = process.env.ALLOWED_ORIGINS
+  if (!origins) {
+    return []
+  }
+  return origins.split(',').map(o => o.trim()).filter(o => o.length > 0)
 }
 
-export function unauthorizedHeadersFor(_event: APIGatewayProxyEventV2): Record<string, string> {
-  return { 'Content-Type': 'application/json' }
-}
-
-/**
- * Returns the HTTP status code for unauthorized requests.
- * Always returns 401 (Unauthorized) - semantically correct for missing authentication.
- * Modern browsers don't show native prompts for 401 on fetch/XHR requests.
- */
-export function unauthorizedStatusFor(_event: APIGatewayProxyEventV2): number {
-  return 401
-}
-
-/**
- * Returns CORS headers. Always included (harmless if no Origin present).
- * If Origin is present, echoes it back; otherwise returns empty CORS headers.
- */
 function getCorsHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
   const origin = getHeader(event, 'origin')
   if (!origin) {
-    // No Origin - return empty (CORS headers not needed, but harmless if included)
     return {}
   }
+
+  const allowedOrigins = getAllowedOrigins()
+  if (allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
+    // Origin not allowed, return empty headers (no CORS)
+    return {}
+  }
+
   return {
     'Access-Control-Allow-Origin': origin,
     'Vary': 'Origin',
@@ -53,22 +35,50 @@ function getCorsHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
   }
 }
 
-/**
- * Returns standard headers for JSON responses, including Content-Type and CORS headers.
- * Use this for all JSON API responses to avoid repetitive header setup.
- */
-export function jsonResponseHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
+function responseHeaders(
+  event: APIGatewayProxyEventV2,
+  includeContentType: boolean = true
+): Record<string, string> {
+  const headers: Record<string, string> = {}
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json'
+  }
   return {
-    'Content-Type': 'application/json',
+    ...headers,
     ...getCorsHeaders(event),
   }
 }
 
-/**
- * Returns CORS headers only (no Content-Type).
- * Use this for non-JSON responses like 204 No Content.
- */
+export function jsonResponseHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
+  return responseHeaders(event, true)
+}
+
 export function corsOnlyHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
-  return getCorsHeaders(event)
+  return responseHeaders(event, false)
+}
+
+export function parseBasicAuth(
+  authorizationHeader: string | undefined
+): { ok: true; username: string; password: string } | { ok: false; statusCode: number; message: string } {
+  if (!authorizationHeader?.startsWith('Basic ')) {
+    return { ok: false, statusCode: 401, message: 'Missing Basic auth' }
+  }
+
+  let decoded: string
+  try {
+    decoded = Buffer.from(authorizationHeader.slice(6), 'base64').toString('utf8')
+  } catch {
+    return { ok: false, statusCode: 400, message: 'Invalid Base64' }
+  }
+
+  const sep = decoded.indexOf(':')
+  if (sep < 0) {
+    return { ok: false, statusCode: 400, message: 'Invalid Basic format' }
+  }
+  
+  const username = decoded.slice(0, sep)
+  const password = decoded.slice(sep + 1)
+  
+  return { ok: true, username, password }
 }
 
