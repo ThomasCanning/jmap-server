@@ -45,9 +45,35 @@ describe("sessionHandler", () => {
     expect(res.headers?.["Content-Type"]).toBe("application/json")
     const body = JSON.parse(res.body!)
     expect(body).toEqual({
-      capabilities: {},
+      capabilities: {
+        "urn:ietf:params:jmap:core": {
+          maxSizeUpload: 50000000,
+          maxConcurrentUpload: 4,
+          maxSizeRequest: 10000000,
+          maxConcurrentRequests: 4,
+          maxCallsInRequest: 16,
+          maxObjectsInGet: 500,
+          maxObjectsInSet: 500,
+        },
+      },
+      accounts: {
+        account1: {
+          name: "Test Account",
+          isPersonal: true,
+          isReadOnly: false,
+          accountCapabilities: {},
+        },
+      },
+      primaryAccounts: {
+        account1: "account1",
+      },
+      username: "testuser",
       apiUrl: "https://jmap.example.com/",
-      primaryAccounts: {},
+      downloadUrl: "https://jmap.example.com/download/{accountId}/{blobId}?type={type}&name={name}",
+      uploadUrl: "https://jmap.example.com/upload/{accountId}",
+      eventSourceUrl:
+        "https://jmap.example.com/events?types={types}&closeafter={closeafter}&ping={ping}",
+      state: "todo",
     })
   })
 
