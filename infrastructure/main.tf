@@ -19,6 +19,10 @@ provider "aws" {
 locals {
   api_subdomain = "api"
   fqdn      = "${local.api_subdomain}.${var.root_domain_name}"
+  # Parse allowed origins into a list for the CloudFront function
+  allowed_origins_list = var.allowed_origins != "" ? split(",", var.allowed_origins) : []
+  # Create JavaScript array string for CloudFront function
+  allowed_origins_js = var.allowed_origins != "" ? join(",", [for origin in local.allowed_origins_list : "'${trimspace(origin)}'"]) : ""
 }
 
 ########################
@@ -75,25 +79,64 @@ resource "aws_apigatewayv2_api_mapping" "jmap" {
 # CloudFront Autodiscovery (domain.com/.well-known/jmap)
 ########################
 
-# CloudFront function for JMAP autodiscovery redirect
+# CloudFront function for JMAP autodiscovery redirect with CORS support
 resource "aws_cloudfront_function" "autodiscovery_redirect" {
   name    = "jmap-autodiscovery-redirect"
   runtime = "cloudfront-js-1.0"
   publish = true
-  comment = "RFC 8620 JMAP autodiscovery redirect - redirects /.well-known/jmap to /jmap/session, returns 404 for other paths when S3 disabled"
+  comment = "RFC 8620 JMAP autodiscovery redirect with CORS - redirects /.well-known/jmap to /jmap/session, returns 404 for other paths when S3 disabled"
   code    = <<-EOT
     function handler(event) {
       var request = event.request;
+      var origin = request.headers.origin ? request.headers.origin.value : '';
+      
+      // Parse allowed origins from the function configuration
+      var allowedOrigins = ${local.allowed_origins_js != "" ? "[${local.allowed_origins_js}]" : "[]"};
+      
+      // Helper function to check if origin is allowed
+      function isOriginAllowed(origin) {
+        if (!origin || allowedOrigins.length === 0) return false;
+        for (var i = 0; i < allowedOrigins.length; i++) {
+          if (allowedOrigins[i] === origin) return true;
+        }
+        return false;
+      }
+      
+      // Helper function to get CORS headers
+      function getCorsHeaders(origin) {
+        var headers = {};
+        if (isOriginAllowed(origin)) {
+          headers['access-control-allow-origin'] = { value: origin };
+          headers['access-control-allow-methods'] = { value: 'GET, OPTIONS' };
+          headers['access-control-allow-headers'] = { value: 'Content-Type, Authorization' };
+          headers['access-control-max-age'] = { value: '3600' };
+        }
+        return headers;
+      }
+      
+      // Handle OPTIONS preflight request
+      if (request.method === 'OPTIONS' && request.uri === '/.well-known/jmap') {
+        var corsHeaders = getCorsHeaders(origin);
+        corsHeaders['cache-control'] = { value: 'public, max-age=3600' };
+        return {
+          statusCode: 204,
+          statusDescription: 'No Content',
+          headers: corsHeaders
+        };
+      }
+      
+      // Handle GET request to /.well-known/jmap
       if (request.uri === '/.well-known/jmap') {
+        var corsHeaders = getCorsHeaders(origin);
+        corsHeaders['location'] = { value: 'https://${local.fqdn}/jmap/session' };
+        corsHeaders['cache-control'] = { value: 'public, max-age=3600' };
         return {
           statusCode: 301,
           statusDescription: 'Moved Permanently',
-          headers: {
-            location: { value: 'https://${local.fqdn}/jmap/session' },
-            'cache-control': { value: 'public, max-age=3600' }
-          }
+          headers: corsHeaders
         };
       }
+      
       // When used on default cache behavior (S3 disabled), return 404 for other paths
       // When used on /.well-known/jmap cache behavior (S3 enabled), this won't be reached
       return {
@@ -151,7 +194,7 @@ resource "aws_cloudfront_distribution" "autodiscovery" {
       path_pattern           = "/.well-known/jmap"
       target_origin_id       = "s3-web-client"  # Dummy - function handles response
       viewer_protocol_policy = "redirect-to-https"
-      allowed_methods        = ["GET", "HEAD"]
+      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
       cached_methods         = ["GET", "HEAD"]
 
       # Use CloudFront function to redirect to jmap.domain.com

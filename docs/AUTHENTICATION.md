@@ -8,7 +8,7 @@ Authentication is attempted in this order:
 
 ### 1. Bearer Token (Primary)
 
-- **Cookies** (browsers): `HttpOnly`, `Secure`, `SameSite=Lax` cookies
+- **Cookies** (browsers): `HttpOnly`, `Secure` cookies with `SameSite` attribute set based on environment (see Security section)
 - **Header** (API clients): `Authorization: Bearer <token>`
 
 ### 2. Basic Authentication (Fallback)
@@ -81,7 +81,11 @@ export const handler = withAuth(async (event, auth) => {
 
 ### Security
 
-**Cookies:** `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`
+**Cookies:** `HttpOnly`, `Secure`, `Path=/`
+
+- **SameSite attribute:**
+  - Local development (`IS_LOCAL_DEV=true`): `SameSite=Lax` (works for same-origin requests)
+  - Production (`IS_LOCAL_DEV=false`): `SameSite=None` (required for cross-origin requests from web clients)
 
 **CORS:** Configured origins only, credentials enabled
 
@@ -109,8 +113,9 @@ All errors return JSON: `{ "error": "message" }`
 
 - `USER_POOL_CLIENT_ID` - Cognito User Pool Client ID
 - `API_URL` - Base API URL (for session endpoint)
+- `IS_LOCAL_DEV` - Only set in local development (set to `"true"` by `generate-env-local.js` when running `make local`). Not set in production (defaults to production behavior with `SameSite=None` cookies).
 
-Set automatically by SAM from CloudFormation outputs.
+Set automatically by SAM from CloudFormation outputs. In local development, `IS_LOCAL_DEV` is automatically set to `"true"` by the `generate-env-local.js` script.
 
 ## Testing
 

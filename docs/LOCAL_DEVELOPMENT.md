@@ -121,6 +121,7 @@ Key variables:
 - `USER_POOL_CLIENT_ID` - Cognito User Pool Client ID (fetched from deployed stack)
 - `AWS_REGION` - AWS region
 - `API_URL` - Base API URL (for session endpoint)
+- `IS_LOCAL_DEV` - Automatically set to `"true"` when running `make local` (controls cookie SameSite attribute). Not set in production deployments.
 
 ## Troubleshooting
 

@@ -62,6 +62,7 @@ tf-apply:
 				-var="root_domain_name=$(ROOT_DOMAIN)" \
 				-var="sam_http_api_id=$$HTTP_API_ID" \
 				-var="web_client_s3_endpoint=$(WEB_CLIENT_S3_ENDPOINT)" \
+				-var="allowed_origins=$(ALLOWED_ORIGINS)" \
 				-var="wait_for_certificate_validation=true" \
 				-auto-approve; \
 		else \
@@ -69,6 +70,7 @@ tf-apply:
 				-var="region=$(REGION)" \
 				-var="root_domain_name=$(ROOT_DOMAIN)" \
 				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-var="allowed_origins=$(ALLOWED_ORIGINS)" \
 				-var="wait_for_certificate_validation=true" \
 				-auto-approve; \
 		fi; \
@@ -80,12 +82,14 @@ tf-apply:
 				-var="root_domain_name=$(ROOT_DOMAIN)" \
 				-var="sam_http_api_id=$$HTTP_API_ID" \
 				-var="web_client_s3_endpoint=$(WEB_CLIENT_S3_ENDPOINT)" \
+				-var="allowed_origins=$(ALLOWED_ORIGINS)" \
 				-auto-approve; \
 		else \
 			AWS_REGION=$(REGION) terraform -chdir=$(TF_DIR) apply \
 				-var="region=$(REGION)" \
 				-var="root_domain_name=$(ROOT_DOMAIN)" \
 				-var="sam_http_api_id=$$HTTP_API_ID" \
+				-var="allowed_origins=$(ALLOWED_ORIGINS)" \
 				-auto-approve; \
 		fi; \
 		$(MAKE) deployment-stage1-complete; \

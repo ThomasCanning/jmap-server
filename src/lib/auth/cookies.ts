@@ -6,6 +6,14 @@ const ACCESS_TOKEN_MAX_AGE = 3600 // 1 hour (matches Cognito access token lifeti
 const REFRESH_TOKEN_MAX_AGE = 30 * 24 * 60 * 60 // 30 days in seconds
 const MAX_TOKEN_LENGTH = 8192
 
+/**
+ * Determines if we're running in local development mode.
+ * Checks the IS_LOCAL_DEV environment variable.
+ */
+function isLocalDevelopment(): boolean {
+  return process.env.IS_LOCAL_DEV === "true"
+}
+
 export function parseCookies(header: string | undefined): Record<string, string> {
   if (!header) return {}
   const out: Record<string, string> = {}
@@ -55,11 +63,12 @@ export function getTokenFromCookies(
 }
 
 export function accessTokenCookie(token: string): string {
+  const sameSite = isLocalDevelopment() ? "SameSite=Lax" : "SameSite=None"
   const attrs = [
     `access_token=${encodeURIComponent(token)}`,
     "HttpOnly",
     "Secure",
-    "SameSite=Lax",
+    sameSite,
     "Path=/",
     `Max-Age=${ACCESS_TOKEN_MAX_AGE}`,
   ]
@@ -67,15 +76,17 @@ export function accessTokenCookie(token: string): string {
 }
 
 export function clearAccessTokenCookie(): string {
-  return "access_token=deleted; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+  const sameSite = isLocalDevelopment() ? "SameSite=Lax" : "SameSite=None"
+  return `access_token=deleted; HttpOnly; Secure; ${sameSite}; Path=/; Max-Age=0`
 }
 
 export function refreshTokenCookie(token: string): string {
+  const sameSite = isLocalDevelopment() ? "SameSite=Lax" : "SameSite=None"
   const attrs = [
     `refresh_token=${encodeURIComponent(token)}`,
     "HttpOnly",
     "Secure",
-    "SameSite=Lax",
+    sameSite,
     "Path=/",
     `Max-Age=${REFRESH_TOKEN_MAX_AGE}`,
   ]
@@ -83,7 +94,8 @@ export function refreshTokenCookie(token: string): string {
 }
 
 export function clearRefreshTokenCookie(): string {
-  return "refresh_token=deleted; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+  const sameSite = isLocalDevelopment() ? "SameSite=Lax" : "SameSite=None"
+  return `refresh_token=deleted; HttpOnly; Secure; ${sameSite}; Path=/; Max-Age=0`
 }
 
 export function setAuthCookies(accessToken?: string, refreshToken?: string): string[] {

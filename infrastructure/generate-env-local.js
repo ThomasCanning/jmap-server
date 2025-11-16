@@ -33,6 +33,9 @@ for (const [resourceName, resource] of Object.entries(template.Resources || {}))
     // Get environment variables from function definition
     const envVarsDef = resource.Properties?.Environment?.Variables || {};
     
+    // Always set IS_LOCAL_DEV to true for local development
+    envVars.IS_LOCAL_DEV = "true";
+    
     // Only add env vars that are actually defined in the template
     // Check for USER_POOL_CLIENT_ID (can be !Ref UserPoolClient or explicit value)
     if (envVarsDef.USER_POOL_CLIENT_ID !== undefined) {
@@ -51,13 +54,8 @@ for (const [resourceName, resource] of Object.entries(template.Resources || {}))
       envVars.AWS_REGION = region;
     }
     
-    // Only add to env.json if function has environment variables
-    if (Object.keys(envVars).length > 0) {
-      envJson[resourceName] = envVars;
-    } else {
-      // Functions with no env vars still need an entry (empty object)
-      envJson[resourceName] = {};
-    }
+    // Always add to env.json (even if only IS_LOCAL_DEV is set)
+    envJson[resourceName] = envVars;
   }
 }
 
