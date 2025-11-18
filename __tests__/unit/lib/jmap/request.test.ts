@@ -590,5 +590,76 @@ describe("processRequest", () => {
       // The key point is that normalArg and anotherArg are NOT processed as result references
       expect("methodResponses" in result || "type" in result).toBe(true)
     })
+
+    it("should return error when same argument name appears in both normal and referenced form", () => {
+      // RFC 8620 Section 3.7: An argument MUST NOT appear in both normal and referenced form
+      const request: JmapRequest = {
+        using: ["urn:ietf:params:jmap:core"],
+        methodCalls: [
+          [
+            "Method1",
+            {
+              arg1: "value",
+              "#arg1": {
+                resultOf: "c0",
+                name: "SomeMethod",
+                path: "/result",
+              },
+            },
+            "c1",
+          ],
+        ],
+      }
+
+      const result = processRequest(request)
+
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(1)
+        const errorResponse = result.methodResponses[0]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidArguments,
+        })
+        expect(errorResponse[2]).toBe("c1")
+      }
+    })
+
+    it("should handle multiple result references with different keys", () => {
+      // Test that multiple result references with different keys work correctly
+      // JavaScript objects can't have duplicate keys, so we test with different keys
+      const request: JmapRequest = {
+        using: ["urn:ietf:params:jmap:core"],
+        methodCalls: [
+          ["Method1", {}, "c1"],
+          [
+            "Method2",
+            {
+              "#ref1": {
+                resultOf: "c1",
+                name: "Method1",
+                path: "/result1",
+              },
+              "#ref2": {
+                resultOf: "c1",
+                name: "Method1",
+                path: "/result2",
+              },
+            },
+            "c2",
+          ],
+        ],
+      }
+
+      const result = processRequest(request)
+
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        // Both references should fail because Method1 returns empty {}
+        expect(result.methodResponses).toHaveLength(2)
+        expect(result.methodResponses[1][0]).toBe("error")
+        expect(result.methodResponses[1][1].type).toBe(methodErrors.invalidResultReference)
+      }
+    })
   })
 })
