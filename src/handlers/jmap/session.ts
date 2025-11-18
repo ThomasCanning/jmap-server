@@ -68,7 +68,10 @@ export const sessionHandler = withAuth(
     //TODO check this and make dynamic
     return {
       statusCode: StatusCodes.OK,
-      headers: jsonResponseHeaders(event),
+      headers: {
+        ...jsonResponseHeaders(event),
+        "Cache-Control": "no-cache, no-store, must-revalidate", // RFC 8620 Section 2
+      },
       body: JSON.stringify(session),
     }
   }
