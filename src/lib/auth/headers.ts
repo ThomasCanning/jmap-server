@@ -1,5 +1,6 @@
 import { APIGatewayProxyEventV2 } from "aws-lambda"
 import { StatusCodes } from "http-status-codes"
+import { selectLanguage } from "../jmap/language"
 
 export function getHeader(event: APIGatewayProxyEventV2, name: string): string | undefined {
   const h = event.headers
@@ -40,26 +41,17 @@ function getCorsHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
   }
 }
 
-function responseHeaders(
-  event: APIGatewayProxyEventV2,
-  includeContentType: boolean = true
-): Record<string, string> {
-  const headers: Record<string, string> = {}
-  if (includeContentType) {
-    headers["Content-Type"] = "application/json"
-  }
-  return {
-    ...headers,
-    ...getCorsHeaders(event),
-  }
-}
-
 export function jsonResponseHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
-  return responseHeaders(event, true)
+  const language = selectLanguage(event)
+  return {
+    ...getCorsHeaders(event),
+    "Content-Language": language,
+    "Content-Type": "application/json",
+  }
 }
 
 export function corsOnlyHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
-  return responseHeaders(event, false)
+  return getCorsHeaders(event)
 }
 
 export function parseBasicAuth(
