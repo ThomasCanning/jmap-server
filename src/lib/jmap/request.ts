@@ -16,6 +16,7 @@ export function processRequest(request: JmapRequest): JmapResponse {
 
     // Don't allow same argument name in normal and referenced form
     const seenKeys = new Set<string>()
+
     // Process each argument
     for (const [key, value] of Object.entries(methodArguments)) {
       const strippedKey = key.startsWith("#") ? key.slice(1) : key
