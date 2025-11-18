@@ -1,7 +1,6 @@
 import { processRequest } from "../../../../src/lib/jmap/request"
 import { JmapRequest, JmapResponse, Id } from "../../../../src/lib/jmap/types"
-import { RequestError, methodErrors, requestErrors } from "../../../../src/lib/jmap/errors"
-import { StatusCodes } from "http-status-codes"
+import { RequestError, methodErrors } from "../../../../src/lib/jmap/errors"
 
 describe("processRequest", () => {
   describe("Basic request processing", () => {
@@ -282,20 +281,17 @@ describe("processRequest", () => {
         ],
       }
 
-      let result: JmapResponse | RequestError
-      try {
-        result = processRequest(request)
-      } catch (error) {
-        result = error as RequestError
-      }
+      const result = processRequest(request)
 
-      expect("type" in result).toBe(true)
-      if ("type" in result) {
-        const error = result as RequestError
-        expect(error.type).toBe(requestErrors.notRequest)
-        expect(error.status).toBe(StatusCodes.BAD_REQUEST)
-        expect(error.detail).toContain("nonexistent-id")
-        expect(error.detail).toContain("not found")
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(1)
+        const errorResponse = result.methodResponses[0]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidResultReference,
+        })
+        expect(errorResponse[2]).toBe("c1")
       }
     })
 
@@ -318,20 +314,20 @@ describe("processRequest", () => {
         ],
       }
 
-      let result: JmapResponse | RequestError
-      try {
-        result = processRequest(request)
-      } catch (error) {
-        result = error as RequestError
-      }
+      const result = processRequest(request)
 
-      expect("type" in result).toBe(true)
-      if ("type" in result) {
-        const error = result as RequestError
-        expect(error.type).toBe(requestErrors.notRequest)
-        expect(error.status).toBe(StatusCodes.BAD_REQUEST)
-        expect(error.detail).toContain("c1")
-        expect(error.detail).toContain("not found")
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(2)
+        // First method should succeed
+        expect(result.methodResponses[0]).toEqual(["Method1", {}, "c1"])
+        // Second method should have error
+        const errorResponse = result.methodResponses[1]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidResultReference,
+        })
+        expect(errorResponse[2]).toBe("c2")
       }
     })
 
@@ -354,20 +350,20 @@ describe("processRequest", () => {
         ],
       }
 
-      let result: JmapResponse | RequestError
-      try {
-        result = processRequest(request)
-      } catch (error) {
-        result = error as RequestError
-      }
+      const result = processRequest(request)
 
-      expect("type" in result).toBe(true)
-      if ("type" in result) {
-        const error = result as RequestError
-        expect(error.type).toBe(methodErrors.invalidResultReference)
-        expect(error.status).toBe(StatusCodes.BAD_REQUEST)
-        expect(error.detail).toContain("JSON Pointer")
-        expect(error.detail).toContain("c1")
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(2)
+        // First method should succeed
+        expect(result.methodResponses[0]).toEqual(["Method1", {}, "c1"])
+        // Second method should have error
+        const errorResponse = result.methodResponses[1]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidResultReference,
+        })
+        expect(errorResponse[2]).toBe("c2")
       }
     })
 
@@ -390,19 +386,20 @@ describe("processRequest", () => {
         ],
       }
 
-      let result: JmapResponse | RequestError
-      try {
-        result = processRequest(request)
-      } catch (error) {
-        result = error as RequestError
-      }
+      const result = processRequest(request)
 
-      expect("type" in result).toBe(true)
-      if ("type" in result) {
-        const error = result as RequestError
-        expect(error.type).toBe(methodErrors.invalidResultReference)
-        expect(error.status).toBe(StatusCodes.BAD_REQUEST)
-        expect(error.detail).toContain("JSON Pointer")
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(2)
+        // First method should succeed
+        expect(result.methodResponses[0]).toEqual(["Method1", {}, "c1"])
+        // Second method should have error
+        const errorResponse = result.methodResponses[1]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidResultReference,
+        })
+        expect(errorResponse[2]).toBe("c2")
       }
     })
   })
@@ -542,17 +539,17 @@ describe("processRequest", () => {
         ],
       }
 
-      let result: JmapResponse | RequestError
-      try {
-        result = processRequest(request)
-      } catch (error) {
-        result = error as RequestError
-      }
+      const result = processRequest(request)
 
-      expect("type" in result).toBe(true)
-      if ("type" in result) {
-        const error = result as RequestError
-        expect(error.type).toBe(requestErrors.notRequest)
+      expect("methodResponses" in result).toBe(true)
+      if ("methodResponses" in result) {
+        expect(result.methodResponses).toHaveLength(1)
+        const errorResponse = result.methodResponses[0]
+        expect(errorResponse[0]).toBe("error")
+        expect(errorResponse[1]).toEqual({
+          type: methodErrors.invalidResultReference,
+        })
+        expect(errorResponse[2]).toBe("c1")
       }
     })
 
