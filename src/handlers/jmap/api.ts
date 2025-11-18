@@ -1,12 +1,12 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda"
-import { withAuth, jsonResponseHeaders, getHeader } from "../../lib/auth"
-import { Request } from "../../lib/jmap/types"
+import { withAuth, jsonResponseHeaders } from "../../lib/auth"
 import { requestErrors, RequestError } from "../../lib/jmap/errors"
 import { StatusCodes } from "http-status-codes"
+import { z } from "zod"
 
 export const apiHandler = withAuth(
   async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
-    if (!isValidContentType(event)) {
+    if (!event.headers["content-type"]?.toLowerCase().startsWith("application/json")) {
       return {
         statusCode: StatusCodes.BAD_REQUEST,
         headers: jsonResponseHeaders(event),
@@ -26,7 +26,7 @@ export const apiHandler = withAuth(
           type: requestErrors.notJson,
           status: StatusCodes.BAD_REQUEST,
           detail: "Request body is missing",
-        }),
+        } as RequestError),
       }
     }
 
@@ -41,98 +41,36 @@ export const apiHandler = withAuth(
           type: requestErrors.notJson,
           status: StatusCodes.BAD_REQUEST,
           detail: "Request did not parse as I-JSON",
-        }),
+        } as RequestError),
       }
     }
 
-    //validate that the parsedBody is of shape Request
-    if (!parsedBody || !isValidRequest(parsedBody)) {
+    const requestSchema = z.object({
+      using: z.array(z.string()),
+      methodCalls: z
+        .array(z.tuple([z.string(), z.record(z.string(), z.unknown()), z.string()]))
+        .min(1),
+      createdIds: z.record(z.string(), z.string()).optional(),
+    })
+
+    const result = requestSchema.safeParse(parsedBody)
+    if (!result.success) {
       return {
         statusCode: StatusCodes.BAD_REQUEST,
         headers: jsonResponseHeaders(event),
         body: JSON.stringify({
           type: requestErrors.notRequest,
           status: StatusCodes.BAD_REQUEST,
-          detail: "Request did not conform to the structure of a Request object",
+          detail:
+            "The request parsed as JSON but did not match the type signature ofthe Request object",
         } as RequestError),
       }
     }
 
-    // For now, return a placeholder response
     return {
-      statusCode: 200,
+      statusCode: StatusCodes.OK,
       headers: jsonResponseHeaders(event),
-      body: JSON.stringify({ message: "Hello world" }),
+      body: JSON.stringify({ message: "Request received" }),
     }
   }
 )
-
-function isValidContentType(event: APIGatewayProxyEventV2): boolean {
-  const contentType = getHeader(event, "content-type")
-  if (!contentType || !contentType.toLowerCase().startsWith("application/json")) {
-    return false
-  }
-  return true
-}
-
-function isValidRequest(body: Record<string, unknown>): body is Request {
-  // Must be an object (not null, not array)
-  if (!body || Array.isArray(body) || typeof body !== "object") {
-    return false
-  }
-
-  // Must have 'using' property that is an array of strings
-  if (!("using" in body)) {
-    return false
-  }
-  if (!Array.isArray(body.using)) {
-    return false
-  }
-  if (!body.using.every((capability): capability is string => typeof capability === "string")) {
-    return false
-  }
-
-  // Must have 'methodCalls' property that is an array
-  if (!("methodCalls" in body)) {
-    return false
-  }
-  if (!Array.isArray(body.methodCalls)) {
-    return false
-  }
-
-  // Each methodCall must be a valid Invocation: [string, Record<string, unknown>, string]
-  if (
-    !body.methodCalls.every((call): call is Request["methodCalls"][number] => {
-      if (!Array.isArray(call) || call.length !== 3) {
-        return false
-      }
-      const [methodName, args, callId] = call
-      return (
-        typeof methodName === "string" &&
-        typeof args === "object" &&
-        args !== null &&
-        !Array.isArray(args) &&
-        typeof callId === "string"
-      )
-    })
-  ) {
-    return false
-  }
-
-  // If 'createdIds' is present, it must be an object with string keys and string values
-  if ("createdIds" in body && body.createdIds !== undefined) {
-    if (
-      typeof body.createdIds !== "object" ||
-      body.createdIds === null ||
-      Array.isArray(body.createdIds)
-    ) {
-      return false
-    }
-    const createdIds = body.createdIds as Record<string, unknown>
-    if (!Object.values(createdIds).every((value): value is string => typeof value === "string")) {
-      return false
-    }
-  }
-
-  return true
-}
