@@ -30,8 +30,7 @@ export const methodErrors = {
   accountNotFound: "accountNotFound",
   accountNotSupportedByMethod: "accountNotSupportedByMethod",
   accountReadOnly: "accountReadOnly",
-  // Set method specific errors (RFC 8620 Section 5.3)
-  // These are returned instead of the "Foo/set" response
+  //Set response errors
   requestTooLarge: "requestTooLarge",
   stateMismatch: "stateMismatch",
 } as const
