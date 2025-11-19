@@ -72,6 +72,9 @@ describe("JMAP Errors", () => {
       expect(methodErrors.accountNotFound).toBe("accountNotFound")
       expect(methodErrors.accountNotSupportedByMethod).toBe("accountNotSupportedByMethod")
       expect(methodErrors.accountReadOnly).toBe("accountReadOnly")
+      // RFC 8620 Section 5.3 defines set method specific errors
+      expect(methodErrors.requestTooLarge).toBe("requestTooLarge")
+      expect(methodErrors.stateMismatch).toBe("stateMismatch")
     })
 
     it("should have method errors as simple strings (not URNs)", () => {
@@ -166,6 +169,12 @@ describe("JMAP Errors", () => {
       expectedMethodErrors.forEach((expected) => {
         expect(actualMethodErrors).toContain(expected)
       })
+    })
+
+    it("should include set method specific errors from RFC 8620 Section 5.3", () => {
+      // These errors are returned instead of the "Foo/set" response
+      expect(methodErrors.requestTooLarge).toBe("requestTooLarge")
+      expect(methodErrors.stateMismatch).toBe("stateMismatch")
     })
   })
 })

@@ -30,6 +30,19 @@ export const methodErrors = {
   accountNotFound: "accountNotFound",
   accountNotSupportedByMethod: "accountNotSupportedByMethod",
   accountReadOnly: "accountReadOnly",
+  //Set response errors
+  requestTooLarge: "requestTooLarge",
+  stateMismatch: "stateMismatch",
+  //Copy response errors
+  fromAccountNotFound: "fromAccountNotFound",
+  fromAccountNotSupportedByMethod: "fromAccountNotSupportedByMethod",
+  //Query response errors
+  anchorNotFound: "anchorNotFound",
+  unsupportedSort: "unsupportedSort",
+  unsupportedFilter: "unsupportedFilter",
+  //QuerySet response errors
+  tooManyChanges: "tooManyChanges",
+  cannotCalculateChanges: "cannotCalculateChanges",
 } as const
 
 export type MethodErrorType = (typeof methodErrors)[keyof typeof methodErrors]
