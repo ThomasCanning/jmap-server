@@ -33,6 +33,13 @@ export const methodErrors = {
   //Set response errors
   requestTooLarge: "requestTooLarge",
   stateMismatch: "stateMismatch",
+  //Copy response errors
+  fromAccountNotFound: "fromAccountNotFound",
+  fromAccountNotSupportedByMethod: "fromAccountNotSupportedByMethod",
+  //Query response errors
+  anchorNotFound: "anchorNotFound",
+  unsupportedSort: "unsupportedSort",
+  unsupportedFilter: "unsupportedFilter",
 } as const
 
 export type MethodErrorType = (typeof methodErrors)[keyof typeof methodErrors]
