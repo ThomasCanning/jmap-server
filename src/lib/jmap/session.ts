@@ -8,6 +8,9 @@ import {
   SessionUrls,
   UnsignedInt,
 } from "./types"
+import { createProblemDetails, errorTypes } from "../errors"
+import { StatusCodes } from "http-status-codes"
+import { AuthenticatedContext } from "../auth/types"
 
 export const capabilityJmapCore: CapabilityJmapCore = {
   maxSizeUpload: 50000000 as UnsignedInt,
@@ -21,7 +24,9 @@ export const capabilityJmapCore: CapabilityJmapCore = {
 }
 
 // TODO get real account
-export function getSession(sessionUrls: SessionUrls): Session {
+export function getSession(auth?: AuthenticatedContext): Session {
+  const sessionUrls = getSessionUrls()
+
   // Create a mock account with proper Account structure
   const accountId = "account1" as Id
   const mockAccount: Account = {
@@ -43,7 +48,7 @@ export function getSession(sessionUrls: SessionUrls): Session {
     primaryAccounts: {
       [accountId]: accountId,
     },
-    username: "testuser",
+    username: auth?.username || "testuser",
     apiUrl: sessionUrls.apiUrl,
     downloadUrl: sessionUrls.downloadUrl,
     uploadUrl: sessionUrls.uploadUrl,
@@ -52,4 +57,47 @@ export function getSession(sessionUrls: SessionUrls): Session {
   }
 
   return session
+}
+
+function getSessionUrls(): SessionUrls {
+  const apiUrl = process.env.API_URL
+  if (!apiUrl || apiUrl.trim().length === 0) {
+    throw createProblemDetails({
+      type: errorTypes.internalServerError,
+      status: StatusCodes.INTERNAL_SERVER_ERROR,
+      detail: "API_URL environment variable is missing",
+    })
+  }
+
+  const downloadUrl = process.env.DOWNLOAD_URL
+  if (!downloadUrl || downloadUrl.trim().length === 0) {
+    throw createProblemDetails({
+      type: errorTypes.internalServerError,
+      status: StatusCodes.INTERNAL_SERVER_ERROR,
+      detail: "DOWNLOAD_URL environment variable is missing",
+    })
+  }
+  const eventSourceUrl = process.env.EVENT_SOURCE_URL
+  if (!eventSourceUrl || eventSourceUrl.trim().length === 0) {
+    throw createProblemDetails({
+      type: errorTypes.internalServerError,
+      status: StatusCodes.INTERNAL_SERVER_ERROR,
+      detail: "EVENT_SOURCE_URL environment variable is missing",
+    })
+  }
+  const uploadUrl = process.env.UPLOAD_URL
+  if (!uploadUrl || uploadUrl.trim().length === 0) {
+    throw createProblemDetails({
+      type: errorTypes.internalServerError,
+      status: StatusCodes.INTERNAL_SERVER_ERROR,
+      detail: "UPLOAD_URL environment variable is missing",
+    })
+  }
+
+  return {
+    apiUrl: apiUrl,
+    downloadUrl: downloadUrl,
+    uploadUrl: uploadUrl,
+    eventSourceUrl: eventSourceUrl,
+  }
 }

@@ -29,6 +29,18 @@ Parameters:
     Type: CommaDelimitedList
     Description: "Comma-separated allowed CORS origins (e.g., https://jmapbox.com,https://second.com,http://localhost:5173)"
     Default: "http://localhost:5173"
+  UploadUrl:
+    Type: String
+    Description: Upload URL for the JMAP API
+    Default: "/upload/{accountId}"
+  DownloadUrl:
+    Type: String
+    Description: Download URL for the JMAP API
+    Default: "/download/{accountId}/{blobId}?type={type}&name={name}"
+  EventSourceUrl:
+    Type: String
+    Description: Event source URL for the JMAP API
+    Default: "/events?types={types}&closeafter={closeafter}&ping={ping}"
 
 # Globals section for shared function and API Gateway configuration
 Globals:
@@ -100,6 +112,9 @@ Resources:
       Environment:
         Variables:
           API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}'
+          DOWNLOAD_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${DownloadUrl}'
+          UPLOAD_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${UploadUrl}'
+          EVENT_SOURCE_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${EventSourceUrl}'
           USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
@@ -152,7 +167,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref JmapHttpApi
-            Path: /upload/{accountId}
+            Path: ${UploadUrl}
             Method: POST
     Metadata:
       BuildMethod: esbuild
@@ -175,7 +190,7 @@ Resources:
           Type: HttpApi
           Properties:
             ApiId: !Ref JmapHttpApi
-            Path: /jmap/download/{accountId}/{blobId}/{name}
+            Path: ${DownloadUrl}
             Method: GET
     Metadata:
       BuildMethod: esbuild
