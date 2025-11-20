@@ -247,7 +247,9 @@ describe("sessionHandler", () => {
 
     expect(res.statusCode).toBe(StatusCodes.INTERNAL_SERVER_ERROR)
     const body = JSON.parse(res.body!)
-    expect(body.error).toContain("API_URL")
+    expect(body.detail).toContain("API_URL")
+    expect(body.status).toBe(StatusCodes.INTERNAL_SERVER_ERROR)
+    expect(body.type).toBe("/errors/internalServerError")
   })
 
   it("should return JSON content type", async () => {

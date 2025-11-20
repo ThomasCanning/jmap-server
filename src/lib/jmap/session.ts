@@ -5,6 +5,7 @@ import {
   CapabilityJmapCore,
   Id,
   Session,
+  SessionUrls,
   UnsignedInt,
 } from "./types"
 
@@ -20,12 +21,7 @@ export const capabilityJmapCore: CapabilityJmapCore = {
 }
 
 // TODO get real account
-export function getSession(apiUrl: string): Session {
-  const baseUrl = apiUrl.replace(/\/$/, "")
-  const downloadUrl = `${baseUrl}/download/{accountId}/{blobId}/{name}?type={type}` as string
-  const uploadUrl = `${baseUrl}/upload/{accountId}`
-  const eventSourceUrl = `${baseUrl}/events?types={types}&closeafter={closeafter}&ping={ping}`
-
+export function getSession(sessionUrls: SessionUrls): Session {
   // Create a mock account with proper Account structure
   const accountId = "account1" as Id
   const mockAccount: Account = {
@@ -48,10 +44,10 @@ export function getSession(apiUrl: string): Session {
       [accountId]: accountId,
     },
     username: "testuser",
-    apiUrl: apiUrl,
-    downloadUrl: downloadUrl,
-    uploadUrl: uploadUrl,
-    eventSourceUrl: eventSourceUrl,
+    apiUrl: sessionUrls.apiUrl,
+    downloadUrl: sessionUrls.downloadUrl,
+    uploadUrl: sessionUrls.uploadUrl,
+    eventSourceUrl: sessionUrls.eventSourceUrl,
     state: "todo",
   }
 

@@ -44,6 +44,12 @@ describe("headers", () => {
       expect(headers["Content-Type"]).toBe("application/json")
     })
 
+    it("sets Content-Type to application/problem+json when isError is true", () => {
+      const event = createBaseEvent()
+      const headers = jsonResponseHeaders(event, true)
+      expect(headers["Content-Type"]).toBe("application/problem+json")
+    })
+
     it("includes CORS headers when origin is provided and allowed", () => {
       process.env.ALLOWED_ORIGINS = "https://example.com"
       const event = createBaseEvent({ headers: { origin: "https://example.com" } })

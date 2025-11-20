@@ -3,7 +3,7 @@ import { StatusCodes } from "http-status-codes"
 import { getHeader, parseBasicAuth } from "./headers"
 import { authenticate, refresh } from "./cognito"
 import { AuthResult } from "./types"
-import { validateEnvVar } from "../env"
+import { ProblemDetails } from "../errors"
 
 interface CredentialsRequestBody {
   username?: string
@@ -103,15 +103,21 @@ export function extractRefreshTokenFromEvent(
 }
 
 export async function authenticateRequest(event: APIGatewayProxyEventV2): Promise<AuthResult> {
-  const clientIdResult = validateEnvVar("USER_POOL_CLIENT_ID", process.env.USER_POOL_CLIENT_ID)
-  if (!clientIdResult.ok) {
-    return clientIdResult
+  const clientId = process.env.USER_POOL_CLIENT_ID
+  if (!clientId || clientId.trim().length === 0) {
+    const problemDetails: ProblemDetails = {
+      type: "about:blank",
+      status: StatusCodes.INTERNAL_SERVER_ERROR,
+      detail: "Internal server error",
+      title: "Server misconfiguration",
+    }
+    throw problemDetails
   }
 
   // Check if this is a refresh token request
   const refreshTokenResult = extractRefreshTokenFromEvent(event)
   if (refreshTokenResult.ok) {
-    return await refresh(refreshTokenResult.refreshToken, clientIdResult.value)
+    return await refresh(refreshTokenResult.refreshToken, clientId)
   }
 
   // Otherwise, treat as credentials-based authentication
@@ -120,5 +126,5 @@ export async function authenticateRequest(event: APIGatewayProxyEventV2): Promis
     return credentials
   }
 
-  return await authenticate(credentials.username, credentials.password, clientIdResult.value)
+  return await authenticate(credentials.username, credentials.password, clientId)
 }

@@ -9,7 +9,7 @@ export function createAuthErrorResponse(
 ): APIGatewayProxyStructuredResultV2 {
   return {
     statusCode,
-    headers: jsonResponseHeaders(event),
+    headers: jsonResponseHeaders(event, true),
     body: JSON.stringify({ error: message }),
   }
 }

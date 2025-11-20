@@ -40,7 +40,7 @@ describe("apiHandler", () => {
       const res = await apiHandler(event)
 
       expect(res.statusCode).toBe(StatusCodes.BAD_REQUEST)
-      expect(res.headers?.["Content-Type"]).toBe("application/json")
+      expect(res.headers?.["Content-Type"]).toBe("application/problem+json")
       const body = JSON.parse(res.body!)
       expect(body.type).toBe(requestErrors.notJson)
       expect(body.detail).toContain("application/json")

@@ -11,7 +11,7 @@ describe("responses", () => {
       expect(response.statusCode).toBe(StatusCodes.UNAUTHORIZED)
       expect(response.body).toBe(JSON.stringify({ error: "Unauthorized" }))
       expect(response.headers).toBeDefined()
-      expect(response.headers?.["Content-Type"]).toBe("application/json")
+      expect(response.headers?.["Content-Type"]).toBe("application/problem+json")
     })
 
     it("includes CORS headers when origin is provided", () => {

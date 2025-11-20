@@ -3,24 +3,25 @@ import { withAuth, jsonResponseHeaders } from "../../lib/auth"
 import { StatusCodes } from "http-status-codes"
 import { upload } from "../../lib/jmap/blob/upload"
 import { Id } from "../../lib/jmap/types"
-import { RequestError, requestErrors } from "../../lib/jmap/errors"
 import { capabilityJmapCore } from "../../lib/jmap/session"
-import { ProblemDetails } from "../../lib/jmap/errors"
+import { ProblemDetails, createProblemDetails, errorTypes } from "../../lib/errors"
 
 export const uploadHandler = withAuth(
   async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
     const accountId = event.pathParameters?.accountId as Id
 
     if (!accountId) {
-      const requestError: RequestError = {
-        type: requestErrors.notRequest,
-        status: StatusCodes.BAD_REQUEST,
-        detail: "Missing accountId path parameter",
-      }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
-        body: JSON.stringify(requestError),
+        headers: jsonResponseHeaders(event, true),
+        body: JSON.stringify(
+          createProblemDetails({
+            type: errorTypes.badRequest,
+            status: StatusCodes.BAD_REQUEST,
+            title: "Missing required parameters",
+            detail: "Must specify accountId path parameter",
+          })
+        ),
       }
     }
 
@@ -36,16 +37,17 @@ export const uploadHandler = withAuth(
     }
 
     if (data.length > capabilityJmapCore.maxSizeUpload) {
-      const requestError: RequestError = {
-        type: requestErrors.limit,
-        status: StatusCodes.BAD_REQUEST,
-        detail: "Data size exceeds the maximum allowed size",
-        limit: "maxSizeUpload",
-      }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
-        body: JSON.stringify(requestError),
+        headers: jsonResponseHeaders(event, true),
+        body: JSON.stringify(
+          createProblemDetails({
+            type: errorTypes.badRequest,
+            status: StatusCodes.BAD_REQUEST,
+            title: "Maximum upload size exceeded",
+            detail: `Data size ${data.length} exceeds the maximum allowed size ${capabilityJmapCore.maxSizeUpload}`,
+          })
+        ),
       }
     }
 
@@ -60,7 +62,7 @@ export const uploadHandler = withAuth(
     } catch (error) {
       return {
         statusCode: StatusCodes.INTERNAL_SERVER_ERROR,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(error as ProblemDetails),
       }
     }

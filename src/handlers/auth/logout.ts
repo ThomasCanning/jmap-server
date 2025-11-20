@@ -6,7 +6,6 @@ import {
   corsOnlyHeaders,
   getTokenFromCookies,
   revokeToken,
-  validateEnvVar,
 } from "../../lib/auth"
 
 /**
@@ -16,12 +15,12 @@ import {
 export const handler = async (
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyStructuredResultV2> => {
-  const clientIdResult = validateEnvVar("USER_POOL_CLIENT_ID", process.env.USER_POOL_CLIENT_ID)
+  const clientId = process.env.USER_POOL_CLIENT_ID
   const refreshToken = getTokenFromCookies(event, "refresh_token")
 
   // Revoke refresh token server-side if present and clientId is valid
-  if (refreshToken && clientIdResult.ok) {
-    const revokeResult = await revokeToken(refreshToken, clientIdResult.value)
+  if (refreshToken && clientId && clientId.trim().length > 0) {
+    const revokeResult = await revokeToken(refreshToken, clientId)
     if (!revokeResult.ok) {
       // Log but continue - we still want to clear cookies even if revocation fails
       console.error("[auth] Failed to revoke token during logout", {

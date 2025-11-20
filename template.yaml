@@ -99,7 +99,7 @@ Resources:
       Handler: src/handlers/jmap/session.sessionHandler
       Environment:
         Variables:
-          API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap'
+          API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}'
           USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
@@ -260,6 +260,32 @@ Resources:
           - src/handlers/auth/token.ts
 
   # END OF AUTH API ENDPOINTS
+
+  # ERROR PAGES
+
+  errorPagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/errors/index.errorHandler
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: /errors/{errorCode}
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        Loader:
+          - .html=text
+        EntryPoints:
+          - src/handlers/errors/index.ts
+
+  # END OF ERROR PAGES
 
   # User pool for auth (cognito)
   UserPool:

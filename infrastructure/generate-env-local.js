@@ -44,7 +44,7 @@ for (const [resourceName, resource] of Object.entries(template.Resources || {}))
     
     // Check for API_URL (can be !Sub expression or explicit value)
     if (envVarsDef.API_URL !== undefined) {
-      envVars.API_URL = `${apiBase}/jmap`;
+      envVars.API_URL = `${apiBase};
     }
     
     // Add AWS_REGION for local dev (Lambda sets it automatically in production)

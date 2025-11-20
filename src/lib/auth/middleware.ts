@@ -7,7 +7,6 @@ import { setAuthCookies } from "./cookies"
 import { verifyBearerFromEvent } from "./verification"
 import { authenticate, refresh } from "./cognito"
 import { createAuthErrorResponse } from "./responses"
-import { validateEnvVar } from "../env"
 import { decodeJwt } from "jose"
 
 function extractUsernameFromToken(token: string): string | undefined {
@@ -191,11 +190,14 @@ export function withAuth(
 ): (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyStructuredResultV2> {
   return async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
     try {
-      const clientIdResult = validateEnvVar("USER_POOL_CLIENT_ID", process.env.USER_POOL_CLIENT_ID)
-      if (!clientIdResult.ok) {
-        return createAuthErrorResponse(event, clientIdResult.statusCode, clientIdResult.message)
+      const clientId = process.env.USER_POOL_CLIENT_ID
+      if (!clientId || clientId.trim().length === 0) {
+        return createAuthErrorResponse(
+          event,
+          StatusCodes.INTERNAL_SERVER_ERROR,
+          "Server misconfiguration (USER_POOL_CLIENT_ID missing)"
+        )
       }
-      const clientId = clientIdResult.value
 
       // Try Bearer token first
       const bearerAuthResult = await verifyBearerFromEvent(event, clientId)

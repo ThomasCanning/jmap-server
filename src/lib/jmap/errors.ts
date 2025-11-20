@@ -1,5 +1,6 @@
 // Request level error urns
 import { StatusCodes } from "http-status-codes"
+import { ProblemDetails } from "../errors"
 
 export const requestErrors = {
   unknownCapability: "urn:ietf:params:jmap:error:unknownCapability",
@@ -10,10 +11,9 @@ export const requestErrors = {
 
 type RequestErrorType = (typeof requestErrors)[keyof typeof requestErrors]
 
-export type RequestError = {
+export type RequestError = ProblemDetails & {
   type: RequestErrorType
   status: StatusCodes.BAD_REQUEST
-  detail: string
   limit?: string
 }
 
@@ -51,11 +51,4 @@ export type MethodError = {
   type: MethodErrorType
   status: number
   detail: string
-}
-
-export type ProblemDetails = {
-  type: string
-  status: number
-  detail: string
-  title?: string
 }

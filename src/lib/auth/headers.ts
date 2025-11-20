@@ -41,12 +41,15 @@ function getCorsHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
   }
 }
 
-export function jsonResponseHeaders(event: APIGatewayProxyEventV2): Record<string, string> {
+export function jsonResponseHeaders(
+  event: APIGatewayProxyEventV2,
+  isError?: boolean
+): Record<string, string> {
   const language = selectLanguage(event)
   return {
     ...getCorsHeaders(event),
     "Content-Language": language,
-    "Content-Type": "application/json",
+    "Content-Type": isError ? "application/problem+json" : "application/json",
   }
 }
 

@@ -42,8 +42,8 @@ output "dns_setup_instructions" {
   ))
 }
 
-output "jmap_api_url" {
-  description = "JMAP API base URL"
+output "api_url" {
+  description = "API base URL"
   value       = "https://${local.api_subdomain}.${var.root_domain_name}"
 }
 
