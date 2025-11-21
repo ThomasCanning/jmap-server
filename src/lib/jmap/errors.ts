@@ -1,6 +1,7 @@
 // Request level error urns
 import { StatusCodes } from "http-status-codes"
 import { ProblemDetails } from "../errors"
+import { Invocation } from "./types"
 
 export const requestErrors = {
   unknownCapability: "urn:ietf:params:jmap:error:unknownCapability",
@@ -51,4 +52,8 @@ export type MethodError = {
   type: MethodErrorType
   status: number
   detail: string
+}
+
+export function createMethodError(methodError: MethodError, methodCallId: string): Invocation {
+  return ["error", methodError, methodCallId]
 }

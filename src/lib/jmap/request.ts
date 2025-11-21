@@ -3,6 +3,7 @@ import { evaluateJsonPointer } from "../json-pointer"
 import { JsonValue } from "./types"
 import { methodErrors } from "./errors"
 import { coreEcho } from "./core/echo"
+import { blobCopy } from "./blob/copy"
 
 export function processRequest(request: JmapRequest): JmapResponse {
   // Track the responses for each method call
@@ -67,6 +68,9 @@ export function processRequest(request: JmapRequest): JmapResponse {
     switch (methodName) {
       case "Core/echo":
         methodResponse = coreEcho(methodCall)
+        break
+      case "Blob/copy":
+        methodResponse = await blobCopy(methodCall, accounts)
         break
       default:
         methodResponse = [
