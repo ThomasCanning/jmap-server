@@ -1,28 +1,43 @@
 import { AuthResult } from "../../../../src/lib/auth/types"
-import { StatusCodes } from "http-status-codes"
 
 describe("types", () => {
   describe("AuthResult", () => {
-    it("returns true for authenticated context", () => {
-      const result: AuthResult = { ok: true, bearerToken: "token" }
-      expect(result.ok).toBe(true)
+    it("can have bearerToken", () => {
+      const result: AuthResult = { username: "testuser", bearerToken: "token" }
+      expect(result.bearerToken).toBe("token")
+      expect(result.username).toBe("testuser")
     })
 
-    it("returns false for error result", () => {
+    it("can have username", () => {
+      const result: AuthResult = { username: "testuser", bearerToken: "token" }
+      expect(result.username).toBe("testuser")
+      expect(result.bearerToken).toBe("token")
+    })
+
+    it("can have refreshToken", () => {
       const result: AuthResult = {
-        ok: false,
-        statusCode: StatusCodes.UNAUTHORIZED,
-        message: "Unauthorized",
+        username: "testuser",
+        bearerToken: "token",
+        refreshToken: "refresh",
       }
-      expect(result.ok).toBe(false)
+      expect(result.refreshToken).toBe("refresh")
+      expect(result.username).toBe("testuser")
     })
 
-    it("narrows type correctly", () => {
-      const result: AuthResult = { ok: true, bearerToken: "token" }
-      if (result.ok) {
-        // TypeScript should know result.bearerToken exists here
-        expect(result.bearerToken).toBe("token")
+    it("can have claims", () => {
+      const result: AuthResult = {
+        username: "testuser",
+        bearerToken: "token",
+        claims: { sub: "user123", username: "testuser" },
       }
+      expect(result.claims?.sub).toBe("user123")
+      expect(result.claims?.username).toBe("testuser")
+      expect(result.username).toBe("testuser")
+    })
+
+    it("username is required", () => {
+      const result: AuthResult = { username: "testuser" }
+      expect(result.username).toBe("testuser")
     })
   })
 })

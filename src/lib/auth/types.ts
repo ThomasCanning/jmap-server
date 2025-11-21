@@ -8,19 +8,25 @@ export interface CognitoJWTClaims extends JWTPayload {
   "cognito:username"?: string
 }
 
-export type AuthResult =
-  | {
-      ok: true
-      username?: string
-      bearerToken?: string
-      refreshToken?: string
-      claims?: CognitoJWTClaims
-    }
-  | { ok: false; statusCode: number; message: string }
-
-export type AuthenticatedContext = AuthResult & { ok: true }
+export type AuthResult = {
+  username: string
+  bearerToken?: string
+  refreshToken?: string
+  claims?: CognitoJWTClaims
+}
 
 export type HandlerFunction = (
   event: APIGatewayProxyEventV2,
-  auth: AuthenticatedContext
+  auth: AuthResult
 ) => Promise<APIGatewayProxyStructuredResultV2>
+
+export interface CredentialsRequestBody {
+  username?: string
+  password?: string
+  refreshToken?: string
+}
+
+export type BasicAuthResult = {
+  username?: string
+  password?: string
+}

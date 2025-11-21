@@ -54,6 +54,7 @@ Globals:
         ALLOWED_ORIGINS: !Join [',', !Ref AllowedClientOrigins]
         API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}'
         USER_POOL_CLIENT_ID: !Ref UserPoolClient
+        USER_POOL_ID: !Ref UserPool
 
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html

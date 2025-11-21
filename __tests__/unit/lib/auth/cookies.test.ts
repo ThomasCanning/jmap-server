@@ -74,18 +74,18 @@ describe("cookies", () => {
       expect(getTokenFromCookies(event, "access_token")).toBe("array-token")
     })
 
-    it("returns undefined when token is missing", () => {
+    it("returns empty string when token is missing", () => {
       const event = createBaseEvent({
         cookies: ["other=value"],
       })
-      expect(getTokenFromCookies(event, "access_token")).toBeUndefined()
+      expect(getTokenFromCookies(event, "access_token")).toBe("")
     })
 
-    it("returns undefined for empty token value", () => {
+    it("returns empty string for empty token value", () => {
       const event = createBaseEvent({
         cookies: ["access_token="],
       })
-      expect(getTokenFromCookies(event, "access_token")).toBeUndefined()
+      expect(getTokenFromCookies(event, "access_token")).toBe("")
     })
 
     it("handles URL-encoded token values", () => {
@@ -100,7 +100,7 @@ describe("cookies", () => {
       const event = createBaseEvent({
         cookies: [`access_token=${longToken}`],
       })
-      expect(getTokenFromCookies(event, "access_token")).toBeUndefined()
+      expect(getTokenFromCookies(event, "access_token")).toBe("")
     })
   })
 

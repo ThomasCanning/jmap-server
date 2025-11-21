@@ -10,7 +10,7 @@ import {
 } from "./types"
 import { createProblemDetails, errorTypes } from "../errors"
 import { StatusCodes } from "http-status-codes"
-import { AuthenticatedContext } from "../auth/types"
+import { AuthResult } from "../auth/types"
 
 export const capabilityJmapCore: CapabilityJmapCore = {
   maxSizeUpload: 50000000 as UnsignedInt,
@@ -24,7 +24,7 @@ export const capabilityJmapCore: CapabilityJmapCore = {
 }
 
 // TODO get real account
-export function getSession(auth?: AuthenticatedContext): Session {
+export function getSession(auth?: AuthResult): Session {
   const sessionUrls = getSessionUrls()
 
   // Create a mock account with proper Account structure

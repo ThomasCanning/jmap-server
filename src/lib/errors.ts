@@ -21,3 +21,9 @@ export function createProblemDetails(options: ProblemDetails): ProblemDetails {
     title: options.title,
   }
 }
+
+export function isProblemDetails(error: unknown): error is ProblemDetails {
+  if (typeof error !== "object" || error === null) return false
+  const e = error as Record<string, unknown>
+  return typeof e.type === "string" && typeof e.status === "number" && typeof e.detail === "string"
+}

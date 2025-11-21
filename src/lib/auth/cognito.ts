@@ -5,7 +5,9 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider"
 import { NodeHttpHandler } from "@smithy/node-http-handler"
 import { StatusCodes } from "http-status-codes"
+import { decodeJwt } from "jose"
 import { AuthResult } from "./types"
+import { createProblemDetails, errorTypes, isProblemDetails } from "../errors"
 
 let cognitoClient: CognitoIdentityProviderClient | null = null
 
@@ -29,10 +31,20 @@ export async function authenticate(
   userPoolClientId: string
 ): Promise<AuthResult> {
   if (!username || username.trim().length === 0) {
-    return { ok: false, statusCode: StatusCodes.BAD_REQUEST, message: "Username is required" }
+    throw createProblemDetails({
+      type: errorTypes.badRequest,
+      status: StatusCodes.BAD_REQUEST,
+      detail: "Username is required",
+      title: "Bad Request",
+    })
   }
   if (!password || password.length === 0) {
-    return { ok: false, statusCode: StatusCodes.BAD_REQUEST, message: "Password is required" }
+    throw createProblemDetails({
+      type: errorTypes.badRequest,
+      status: StatusCodes.BAD_REQUEST,
+      detail: "Password is required",
+      title: "Bad Request",
+    })
   }
 
   try {
@@ -44,27 +56,40 @@ export async function authenticate(
     const res = await getCognitoClient().send(cmd)
     const token = res.AuthenticationResult?.AccessToken
     const refreshToken = res.AuthenticationResult?.RefreshToken
+
     if (!token) {
-      return {
-        ok: false,
-        statusCode: StatusCodes.BAD_GATEWAY,
-        message: "No access token from Cognito",
-      }
+      throw createProblemDetails({
+        type: errorTypes.unauthorized,
+        status: StatusCodes.UNAUTHORIZED,
+        detail: "Authentication failed. Invalid username or password",
+        title: "Unauthorized",
+      })
     }
-    return { ok: true, username, bearerToken: token, refreshToken }
-  } catch (e) {
-    const err = e as Error
-    console.error("[auth] InitiateAuth error", {
-      error: err.name || "UnknownError",
-      usernameLength: username.length,
+
+    return { username, bearerToken: token, refreshToken }
+  } catch (error) {
+    // If it's already a ProblemDetails error, re-throw it
+    if (isProblemDetails(error)) {
+      throw error
+    }
+    // Wrap AWS SDK errors
+    throw createProblemDetails({
+      type: errorTypes.unauthorized,
+      status: StatusCodes.UNAUTHORIZED,
+      detail: "Authentication failed. Invalid username or password",
+      title: "Unauthorized",
     })
-    return { ok: false, statusCode: StatusCodes.UNAUTHORIZED, message: "Invalid credentials" }
   }
 }
 
 export async function refresh(refreshToken: string, userPoolClientId: string): Promise<AuthResult> {
   if (!refreshToken || refreshToken.trim().length === 0) {
-    return { ok: false, statusCode: StatusCodes.BAD_REQUEST, message: "Refresh token is required" }
+    throw createProblemDetails({
+      type: errorTypes.badRequest,
+      status: StatusCodes.BAD_REQUEST,
+      detail: "Refresh token is required",
+      title: "Bad Request",
+    })
   }
 
   try {
@@ -80,47 +105,46 @@ export async function refresh(refreshToken: string, userPoolClientId: string): P
     const newRefreshToken = res.AuthenticationResult?.RefreshToken || refreshToken
 
     if (!token) {
-      return {
-        ok: false,
-        statusCode: StatusCodes.BAD_GATEWAY,
-        message: "No access token from Cognito",
-      }
+      throw createProblemDetails({
+        type: errorTypes.unauthorized,
+        status: StatusCodes.UNAUTHORIZED,
+        detail: "Refresh token authentication failed. Invalid or expired refresh token",
+        title: "Unauthorized",
+      })
     }
-    return { ok: true, bearerToken: token, refreshToken: newRefreshToken }
-  } catch (e) {
-    const err = e as Error
-    console.error("[auth] RefreshToken error", {
-      error: err.name || "UnknownError",
+
+    const decoded = decodeJwt(token)
+    const username =
+      ((decoded.username || decoded["cognito:username"] || decoded.sub) as string) || ""
+
+    return { username, bearerToken: token, refreshToken: newRefreshToken }
+  } catch (error) {
+    // If it's already a ProblemDetails error, re-throw it
+    if (isProblemDetails(error)) {
+      throw error
+    }
+    throw createProblemDetails({
+      type: errorTypes.unauthorized,
+      status: StatusCodes.UNAUTHORIZED,
+      detail: "Refresh token authentication failed. Invalid or expired refresh token",
+      title: "Unauthorized",
     })
-    return {
-      ok: false,
-      statusCode: StatusCodes.UNAUTHORIZED,
-      message: "Invalid or expired refresh token",
-    }
   }
 }
 
-export async function revokeToken(
-  refreshToken: string,
-  userPoolClientId: string
-): Promise<{ ok: true } | { ok: false; statusCode: number; message: string }> {
+export async function revokeToken(refreshToken: string, userPoolClientId: string): Promise<void> {
   try {
     const cmd = new RevokeTokenCommand({
       Token: refreshToken,
       ClientId: userPoolClientId,
     })
     await getCognitoClient().send(cmd)
-    return { ok: true }
-  } catch (e) {
-    const err = e as Error
-    console.error("[auth] RevokeToken error", {
-      error: err.name || "UnknownError",
-      errorMessage: err.message,
-    })
-    return {
-      ok: false,
-      statusCode: StatusCodes.INTERNAL_SERVER_ERROR,
-      message: "Failed to revoke token",
+  } catch (error) {
+    // If it's already a ProblemDetails error, re-throw it
+    if (isProblemDetails(error)) {
+      throw error
     }
+    // Wrap AWS SDK errors - but don't fail logout if token revocation fails
+    // Don't throw - logout should succeed even if revocation fails
   }
 }

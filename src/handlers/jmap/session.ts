@@ -1,13 +1,14 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda"
 import { StatusCodes } from "http-status-codes"
-import { withAuth, jsonResponseHeaders, AuthenticatedContext } from "../../lib/auth"
+import { withAuth, jsonResponseHeaders } from "../../lib/auth"
+import { AuthResult } from "../../lib/auth/types"
 import { getSession } from "../../lib/jmap/session"
 import { ProblemDetails } from "../../lib/errors"
 
 export const sessionHandler = withAuth(
   async (
     event: APIGatewayProxyEventV2,
-    auth: AuthenticatedContext
+    auth: AuthResult
   ): Promise<APIGatewayProxyStructuredResultV2> => {
     try {
       const session = getSession(auth)

@@ -7,6 +7,7 @@ import {
 } from "../../../../src/lib/auth/headers"
 import { createBaseEvent } from "./__setup__"
 import { StatusCodes } from "http-status-codes"
+import { isProblemDetails } from "../../../../src/lib/errors"
 
 describe("headers", () => {
   describe("getHeader", () => {
@@ -95,47 +96,60 @@ describe("headers", () => {
       const authHeader = "Basic " + Buffer.from("user@example.com:password123").toString("base64")
       const result = parseBasicAuth(authHeader)
 
-      expect(result.ok).toBe(true)
-      if (result.ok) {
-        expect(result.username).toBe("user@example.com")
-        expect(result.password).toBe("password123")
+      expect(result.username).toBe("user@example.com")
+      expect(result.password).toBe("password123")
+    })
+
+    it("throws ProblemDetails when Authorization header is missing", () => {
+      expect(() => parseBasicAuth(undefined)).toThrow()
+      try {
+        parseBasicAuth(undefined)
+      } catch (error) {
+        expect(isProblemDetails(error)).toBe(true)
+        if (isProblemDetails(error)) {
+          expect(error.status).toBe(StatusCodes.BAD_REQUEST)
+          expect(error.detail).toContain("Missing Basic auth header")
+        }
       }
     })
 
-    it("returns error when Authorization header is missing", () => {
-      const result = parseBasicAuth(undefined)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(StatusCodes.UNAUTHORIZED)
-        expect(result.message).toBe("Missing Basic auth")
+    it("throws ProblemDetails when Authorization header is not Basic", () => {
+      expect(() => parseBasicAuth("Bearer token123")).toThrow()
+      try {
+        parseBasicAuth("Bearer token123")
+      } catch (error) {
+        expect(isProblemDetails(error)).toBe(true)
+        if (isProblemDetails(error)) {
+          expect(error.status).toBe(StatusCodes.BAD_REQUEST)
+          expect(error.detail).toContain("Invalid Basic auth header")
+        }
       }
     })
 
-    it("returns error when Authorization header is not Basic", () => {
-      const result = parseBasicAuth("Bearer token123")
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(StatusCodes.UNAUTHORIZED)
-        expect(result.message).toBe("Missing Basic auth")
+    it("throws ProblemDetails on invalid Base64 characters", () => {
+      expect(() => parseBasicAuth("Basic !!!invalid!!!")).toThrow()
+      try {
+        parseBasicAuth("Basic !!!invalid!!!")
+      } catch (error) {
+        expect(isProblemDetails(error)).toBe(true)
+        if (isProblemDetails(error)) {
+          expect(error.status).toBe(StatusCodes.BAD_REQUEST)
+          expect(error.detail).toContain("invalid Base64")
+        }
       }
     })
 
-    it("returns error on invalid Base64 characters", () => {
-      const result = parseBasicAuth("Basic !!!invalid!!!")
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(StatusCodes.UNAUTHORIZED)
-        expect(result.message).toBe("Invalid Base64")
-      }
-    })
-
-    it("returns error when credentials lack colon separator", () => {
+    it("throws ProblemDetails when credentials lack colon separator", () => {
       const authHeader = "Basic " + Buffer.from("usernameonly").toString("base64")
-      const result = parseBasicAuth(authHeader)
-      expect(result.ok).toBe(false)
-      if (!result.ok) {
-        expect(result.statusCode).toBe(StatusCodes.UNAUTHORIZED)
-        expect(result.message).toBe("Invalid Basic format")
+      expect(() => parseBasicAuth(authHeader)).toThrow()
+      try {
+        parseBasicAuth(authHeader)
+      } catch (error) {
+        expect(isProblemDetails(error)).toBe(true)
+        if (isProblemDetails(error)) {
+          expect(error.status).toBe(StatusCodes.BAD_REQUEST)
+          expect(error.detail).toContain("invalid format")
+        }
       }
     })
 
@@ -143,33 +157,24 @@ describe("headers", () => {
       const authHeader = "Basic " + Buffer.from("user:pass:word:123").toString("base64")
       const result = parseBasicAuth(authHeader)
 
-      expect(result.ok).toBe(true)
-      if (result.ok) {
-        expect(result.username).toBe("user")
-        expect(result.password).toBe("pass:word:123")
-      }
+      expect(result.username).toBe("user")
+      expect(result.password).toBe("pass:word:123")
     })
 
     it("handles empty username", () => {
       const authHeader = "Basic " + Buffer.from(":password").toString("base64")
       const result = parseBasicAuth(authHeader)
 
-      expect(result.ok).toBe(true)
-      if (result.ok) {
-        expect(result.username).toBe("")
-        expect(result.password).toBe("password")
-      }
+      expect(result.username).toBe("")
+      expect(result.password).toBe("password")
     })
 
     it("handles empty password", () => {
       const authHeader = "Basic " + Buffer.from("username:").toString("base64")
       const result = parseBasicAuth(authHeader)
 
-      expect(result.ok).toBe(true)
-      if (result.ok) {
-        expect(result.username).toBe("username")
-        expect(result.password).toBe("")
-      }
+      expect(result.username).toBe("username")
+      expect(result.password).toBe("")
     })
   })
 })

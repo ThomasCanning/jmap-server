@@ -15,7 +15,6 @@ jest.mock("../../../../src/lib/auth", () => {
       // Bypass auth and call handler directly with mock auth context
       return async (event: APIGatewayProxyEventV2) => {
         const mockAuth = {
-          ok: true as const,
           username: "testuser",
           bearerToken: "test-bearer-token",
           claims: { sub: "user123", username: "testuser" },
