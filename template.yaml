@@ -5,7 +5,7 @@
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/format-version-structure.html
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  jmap-server
+  Serverless lambda implementation of the JMAP protocol for email
 
 # Transform section specifies one or more macros that AWS CloudFormation uses to process your template
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/transform-section-structure.html
@@ -29,6 +29,18 @@ Parameters:
     Type: CommaDelimitedList
     Description: "Comma-separated allowed CORS origins (e.g., https://jmapbox.com,https://second.com,http://localhost:5173)"
     Default: "http://localhost:5173"
+  UploadUrl:
+    Type: String
+    Description: Upload URL for the JMAP API
+    Default: "/upload/{accountId}"
+  DownloadUrl:
+    Type: String
+    Description: Download URL for the JMAP API
+    Default: "/download/{accountId}/{blobId}?type={type}&name={name}"
+  EventSourceUrl:
+    Type: String
+    Description: Event source URL for the JMAP API
+    Default: "/events?types={types}&closeafter={closeafter}&ping={ping}"
 
 # Globals section for shared function and API Gateway configuration
 Globals:
@@ -40,6 +52,9 @@ Globals:
     Environment:
       Variables:
         ALLOWED_ORIGINS: !Join [',', !Ref AllowedClientOrigins]
+        API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}'
+        USER_POOL_CLIENT_ID: !Ref UserPoolClient
+        USER_POOL_ID: !Ref UserPool
 
 # Resources declares the AWS resources that you want to include in the stack
 # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
@@ -99,8 +114,9 @@ Resources:
       Handler: src/handlers/jmap/session.sessionHandler
       Environment:
         Variables:
-          API_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap'
-          USER_POOL_CLIENT_ID: !Ref UserPoolClient
+          DOWNLOAD_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${DownloadUrl}'
+          UPLOAD_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${UploadUrl}'
+          EVENT_SOURCE_URL: !Sub 'https://${SubDomainName}.${RootDomainName}/jmap${EventSourceUrl}'
       Events:
         Api:
           Type: HttpApi
@@ -121,9 +137,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/jmap/api.apiHandler
-      Environment:
-        Variables:
-          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
           Type: HttpApi
@@ -140,6 +153,46 @@ Resources:
         EntryPoints:
           - src/handlers/jmap/api.ts
 
+  jmapUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/jmap/upload.uploadHandler
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: ${UploadUrl}
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handlers/jmap/upload.ts
+
+  jmapDownloadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/jmap/download.downloadHandler
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: ${DownloadUrl}
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handlers/jmap/download.ts
+
   # END OF JMAP API ENDPOINTS
 
   # AUTH API ENDPOINTS
@@ -148,9 +201,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/auth/logout.handler
-      Environment:
-        Variables:
-          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
           Type: HttpApi
@@ -171,9 +221,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/auth/login.handler
-      Environment:
-        Variables:
-          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
           Type: HttpApi
@@ -194,9 +241,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/auth/token.handler
-      Environment:
-        Variables:
-          USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         Api:
           Type: HttpApi
@@ -214,6 +258,32 @@ Resources:
           - src/handlers/auth/token.ts
 
   # END OF AUTH API ENDPOINTS
+
+  # ERROR PAGES
+
+  errorPagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/errors/index.errorHandler
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref JmapHttpApi
+            Path: /errors/{errorCode}
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        Loader:
+          - .html=text
+        EntryPoints:
+          - src/handlers/errors/index.ts
+
+  # END OF ERROR PAGES
 
   # User pool for auth (cognito)
   UserPool:

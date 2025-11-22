@@ -39,6 +39,13 @@ export type Session = {
   state: string
 }
 
+export type SessionUrls = {
+  apiUrl: string
+  downloadUrl: string
+  uploadUrl: string
+  eventSourceUrl: string
+}
+
 export type Capabilities = Record<string, Record<string, unknown>>
 
 export interface Account {

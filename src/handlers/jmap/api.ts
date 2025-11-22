@@ -17,7 +17,7 @@ export const apiHandler = withAuth(
       }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(requestError),
       }
     }
@@ -30,7 +30,7 @@ export const apiHandler = withAuth(
       }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(requestError),
       }
     }
@@ -47,7 +47,7 @@ export const apiHandler = withAuth(
       }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(requestError),
       }
     }
@@ -62,7 +62,7 @@ export const apiHandler = withAuth(
       }
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(requestError),
       }
     }
@@ -78,7 +78,7 @@ export const apiHandler = withAuth(
         }
         return {
           statusCode: StatusCodes.BAD_REQUEST,
-          headers: jsonResponseHeaders(event),
+          headers: jsonResponseHeaders(event, true),
           body: JSON.stringify(requestError),
         }
       }
@@ -96,7 +96,7 @@ export const apiHandler = withAuth(
     } catch (error) {
       return {
         statusCode: StatusCodes.BAD_REQUEST,
-        headers: jsonResponseHeaders(event),
+        headers: jsonResponseHeaders(event, true),
         body: JSON.stringify(error as RequestError),
       }
     }

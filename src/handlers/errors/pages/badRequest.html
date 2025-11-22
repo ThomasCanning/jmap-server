@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>400 Bad Request</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #f57c00;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .status-code {
+            color: #666;
+            font-size: 1.2em;
+            margin-bottom: 20px;
+        }
+        .error-code {
+            background: #f5f5f5;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #555;
+        }
+        p {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        .description {
+            background: #f9f9f9;
+            padding: 20px;
+            border-left: 4px solid #f57c00;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        a {
+            color: #1976d2;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bad Request</h1>
+        <div class="status-code">HTTP 400</div>
+        <div class="error-code">Error Code: badRequest</div>
+        
+        <div class="description">
+            <p><strong>What happened?</strong></p>
+            <p>The server could not process your request because it contains invalid syntax, missing required parameters, or violates the request format requirements.</p>
+        </div>
+        
+        <p><strong>What can you do?</strong></p>
+        <ul style="margin-left: 20px; color: #555;">
+            <li>Check that all required parameters are included in your request</li>
+            <li>Verify that your request body is properly formatted (e.g., valid JSON)</li>
+            <li>Ensure that the Content-Type header matches the request body format</li>
+            <li>Review the API documentation to confirm the correct request structure</li>
+            <li>Check for any validation errors in the request data</li>
+        </ul>
+        
+    </div>
+</body>
+</html>
+

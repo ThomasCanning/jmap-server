@@ -17,24 +17,27 @@ function isLocalDevelopment(): boolean {
 export function parseCookies(header: string | undefined): Record<string, string> {
   if (!header) return {}
   const out: Record<string, string> = {}
-  header.split(";").forEach((part) => {
+  for (const part of header.split(";")) {
     const [k, ...rest] = part.trim().split("=")
-    if (!k) return
+    if (!k) continue
     const key = k.trim()
     const value = rest.join("=").trim()
     try {
       out[key] = decodeURIComponent(value)
-    } catch {
-      // Invalid URL encoding, skip this cookie
+    } catch (error) {
+      // decodeURIComponent only throws URIError for invalid encoding
+      // Skip cookies with invalid URL encoding
+      if (error instanceof URIError) {
+        continue
+      }
+      // Re-throw any unexpected errors (shouldn't happen)
+      throw error
     }
-  })
+  }
   return out
 }
 
-export function getTokenFromCookies(
-  event: APIGatewayProxyEventV2,
-  tokenName: string
-): string | undefined {
+export function getTokenFromCookies(event: APIGatewayProxyEventV2, tokenName: string): string {
   const cookiesArray = event.cookies || []
   for (const cookie of cookiesArray) {
     if (cookie.startsWith(`${tokenName}=`)) {
@@ -42,9 +45,14 @@ export function getTokenFromCookies(
       if (value && value.trim().length > 0 && value.length <= MAX_TOKEN_LENGTH) {
         try {
           return decodeURIComponent(value)
-        } catch {
-          // Invalid URL encoding, skip this cookie
-          continue
+        } catch (error) {
+          // decodeURIComponent only throws URIError for invalid encoding
+          // Skip cookies with invalid URL encoding
+          if (error instanceof URIError) {
+            continue
+          }
+          // Re-throw any unexpected errors (shouldn't happen)
+          throw error
         }
       }
     }
@@ -59,7 +67,7 @@ export function getTokenFromCookies(
     }
   }
 
-  return undefined
+  return ""
 }
 
 export function accessTokenCookie(token: string): string {

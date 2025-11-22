@@ -24,8 +24,9 @@ STACK_NAME  ?= $(shell awk -F'=' '/^stack_name/ {gsub(/[ "\r\t]/, "", $$2); prin
 gen-env-local:
 	@STACK_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].StackId' --output text 2>/dev/null || true); \
 	USER_POOL_CLIENT_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || true); \
+	USER_POOL_ID=$$(AWS_REGION=$(REGION) aws cloudformation describe-stacks --stack-name $(STACK_NAME) --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || true); \
 	REG=$(REGION); API_BASE="http://localhost:3001"; \
-	REGION="$$REG" USER_POOL_CLIENT_ID="$$USER_POOL_CLIENT_ID" API_BASE="$$API_BASE" node infrastructure/generate-env-local.js
+	REGION="$$REG" USER_POOL_CLIENT_ID="$$USER_POOL_CLIENT_ID" USER_POOL_ID="$$USER_POOL_ID" API_BASE="$$API_BASE" node infrastructure/generate-env-local.js
 
 deploy: ensure-config npm-install lint test sam-deploy set-admin-password tf-apply
 
